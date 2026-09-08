@@ -119,6 +119,37 @@ render wrong.
 Every entry point degrades: without the extra, `available()` is False and calls
 raise `RenderUnavailable` with an actionable message.
 
+### `theme`
+
+One token source, two outputs. A Vega `config` block styles the plot and
+nothing else — but three of the four payload families here are not Vega. KPI
+tiles, rich tables and the dashboard grid are hand-written frontend components,
+so a theme system that only speaks Vega leaves them unstyled and drifting.
+
+```
+ThemeTokens (YAML)
+   ├─ theme/vega.py → Vega-Lite `config`
+   └─ theme/css.py  → :root{--nxv-*} + .nxv-card / .nxv-kpi / .nxv-table / .nxv-cell--*
+```
+
+`powerbi` and `carbon-g90` are **derived, not hand-reproduced**:
+`_generate_presets.py` reads the configs vl-convert bundles — the same
+`vega-themes` builds `lexy_ui` hands to `react-vega` today — keeps them verbatim
+under `vega_base: "overrides"`, and extracts tokens for the CSS side. A test
+asserts the resulting PNG is byte-identical to `to_png(spec, theme="powerbi")`,
+so adopting these is not a visual regression.
+
+`strip_hardcoded_colours` matters more than it looks: generated specs bake a
+brand hex into `mark.color`, which overrides `config` entirely. Without
+stripping it, switching themes appears to do nothing on exactly the charts
+people notice.
+
+`contrast.py` audits a theme against WCAG AA (4.5:1 text, 3:1 graphical
+objects) plus a CIE76 ΔE check that adjacent categorical colours are
+distinguishable from *each other* — which WCAG does not cover and a stacked bar
+badly needs. Our own themes must pass outright; the derived ones carry a
+recorded deviation list, because preserving upstream's palette is the point.
+
 ### `corpus`
 
 200 hand-authored chart pairs across 20 chart types, each carrying a

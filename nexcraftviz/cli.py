@@ -61,6 +61,33 @@ def main(argv: list[str] | None = None) -> int:
     p_ops = sub.add_parser("ops", help="List the available operations and their arguments.")
     p_ops.add_argument("--json", action="store_true", help="Emit the JSON schema instead.")
 
+    p_theme = sub.add_parser("theme", help="List, inspect, audit and apply themes.")
+    theme_sub = p_theme.add_subparsers(dest="theme_command", required=True)
+
+    theme_sub.add_parser("list", help="List the available themes.")
+
+    t_show = theme_sub.add_parser("show", help="Print a theme's Vega config.")
+    t_show.add_argument("name")
+
+    t_css = theme_sub.add_parser("css", help="Print the CSS bundle for a theme pair.")
+    t_css.add_argument("--light", default="nexcraftviz-light")
+    t_css.add_argument("--dark", default="nexcraftviz-dark")
+    t_css.add_argument("--out", help="Write here instead of stdout.")
+
+    t_audit = theme_sub.add_parser("audit", help="Check a theme against WCAG AA.")
+    t_audit.add_argument("name", nargs="?", help="Omit to audit every theme.")
+
+    t_apply = theme_sub.add_parser("apply", help="Apply a theme to a spec.")
+    t_apply.add_argument("name")
+    t_apply.add_argument("spec")
+    t_apply.add_argument("--out", help="Write the themed spec here (default: stdout).")
+    t_apply.add_argument(
+        "--keep-colours",
+        action="store_true",
+        help="Keep hard-coded mark colours. By default they are stripped, since "
+             "they override config and make the theme appear to do nothing.",
+    )
+
     args = parser.parse_args(argv)
     try:
         return _dispatch(args)
@@ -80,6 +107,8 @@ def _dispatch(args: argparse.Namespace) -> int:
         return _cmd_render(args)
     if args.command == "ops":
         return _cmd_ops(args)
+    if args.command == "theme":
+        return _cmd_theme(args)
     raise ValueError(f"unknown command {args.command!r}")
 
 
@@ -169,6 +198,62 @@ def _cmd_ops(args: argparse.Namespace) -> int:
             required = "required" if info.is_required() else "optional"
             print(f"      - {field_name} ({required}): {description}")
     return 0
+
+
+def _cmd_theme(args: argparse.Namespace) -> int:
+    from nexcraftviz.theme import (
+        apply_theme,
+        audit,
+        available_themes,
+        load,
+        strip_hardcoded_colours,
+        to_bundle,
+    )
+
+    if args.theme_command == "list":
+        for name in available_themes():
+            theme = load(name)
+            print(f"{name:<20} {theme.mode:<6} {theme.description.strip().splitlines()[0][:60]}")
+        return 0
+
+    if args.theme_command == "show":
+        print(json.dumps(load(args.name).vega_config(), indent=2))
+        return 0
+
+    if args.theme_command == "css":
+        css = to_bundle(load(args.light), load(args.dark))
+        if args.out:
+            Path(args.out).write_text(css, encoding="utf-8")
+            print(f"wrote {args.out} ({len(css)} bytes)")
+        else:
+            print(css)
+        return 0
+
+    if args.theme_command == "audit":
+        names = [args.name] if args.name else available_themes()
+        failed = False
+        for name in names:
+            report = audit(load(name))
+            print(report.summary())
+            for issue in report.issues:
+                print(f"  {issue}")
+            failed = failed or not report.ok
+        return 2 if failed else 0
+
+    if args.theme_command == "apply":
+        spec = Spec(load_json(args.spec))
+        if not args.keep_colours:
+            spec = strip_hardcoded_colours(spec).spec
+        result = apply_theme(spec, args.name)
+        payload = result.spec.to_json(indent=2)
+        if args.out:
+            Path(args.out).write_text(payload, encoding="utf-8")
+            print(f"wrote {args.out}", file=sys.stderr)
+        else:
+            print(payload)
+        return 0
+
+    raise ValueError(f"unknown theme command {args.theme_command!r}")
 
 
 # ---------------------------------------------------------------------------

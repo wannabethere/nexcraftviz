@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>nexcraftviz — reference renderer</title>
+
+<!-- The generated theme bundle. Rebuild with:
+     nexcraftviz theme css --out assets/nexcraftviz.css -->
+<link rel="stylesheet" href="../assets/nexcraftviz.css">
+
+<script src="https://cdn.jsdelivr.net/npm/vega@5"></script>
+<script src="https://cdn.jsdelivr.net/npm/vega-lite@5"></script>
+<script src="https://cdn.jsdelivr.net/npm/vega-embed@6"></script>
+
+<style>
+  body {
+    background: var(--nxv-background);
+    color: var(--nxv-text);
+    font-family: var(--nxv-font);
+    font-size: var(--nxv-size-base);
+    margin: 0;
+    padding: calc(var(--nxv-space) * 3);
+  }
+  header { align-items: baseline; display: flex; gap: var(--nxv-space); justify-content: space-between; margin-bottom: calc(var(--nxv-space) * 3); }
+  h1 { font-size: var(--nxv-size-xl); margin: 0; }
+  h2 { color: var(--nxv-text-secondary); font-size: var(--nxv-size-sm); font-weight: var(--nxv-weight-medium); letter-spacing: .06em; margin: calc(var(--nxv-space) * 4) 0 var(--nxv-space); text-transform: uppercase; }
+  .lede { color: var(--nxv-text-secondary); max-width: 60ch; }
+  button { background: var(--nxv-surface); border: 1px solid var(--nxv-border-strong); border-radius: var(--nxv-radius-sm); color: var(--nxv-text); cursor: pointer; font: inherit; padding: 6px 12px; }
+  button[aria-pressed="true"] { background: var(--nxv-accent); border-color: var(--nxv-accent); color: var(--nxv-text-inverse); }
+  .controls { display: flex; flex-wrap: wrap; gap: 6px; }
+  .note { border-left: 3px solid var(--nxv-warning); color: var(--nxv-text-secondary); margin: calc(var(--nxv-space) * 2) 0; padding-left: calc(var(--nxv-space) * 1.5); }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>nexcraftviz reference renderer</h1>
+    <p class="lede">
+      The three payload families this stack emits, all drawn from one theme.
+      Charts go through Vega; KPI tiles and rich tables do not — they are the
+      reason theming needs a CSS half.
+    </p>
+  </div>
+  <div class="controls" id="themes"></div>
+</header>
+
+<p class="note">
+  <strong>table_with_cells has no renderer in production.</strong> 30 of the 200
+  corpus pairs emit it, and nothing downstream draws it — those specs fall back
+  to a flat untyped table, silently dropping avatars, progress bars and pills.
+  The markup below is the reference implementation.
+</p>
+
+<h2>Vega-Lite charts</h2>
+<div class="nxv-grid" id="charts"></div>
+
+<h2>KPI tiles — <code>kpi_metadata</code></h2>
+<div class="nxv-grid nxv-grid--kpi-row" id="kpis"></div>
+
+<h2>Rich table — <code>table_with_cells</code></h2>
+<div class="nxv-card">
+  <div class="nxv-card__header">
+    <h3 class="nxv-card__title">Team delivery</h3>
+    <span class="nxv-card__subtitle">every cell renderer</span>
+  </div>
+  <div class="nxv-card__body"><table class="nxv-table" id="table"></table></div>
+</div>
+
+<script>
+// ---------------------------------------------------------------------------
+// Theme switching. Only the attribute changes — every colour below comes from
+// a CSS custom property, and the chart config is swapped alongside it so the
+// two halves never disagree.
+// ---------------------------------------------------------------------------
+const THEMES = ['nexcraftviz-light', 'nexcraftviz-dark'];
+let current = 'nexcraftviz-light';
+
+const themeBar = document.getElementById('themes');
+THEMES.forEach(name => {
+  const button = document.createElement('button');
+  button.textContent = name.replace('nexcraftviz-', '');
+  button.setAttribute('aria-pressed', String(name === current));
+  button.onclick = () => {
+    current = name;
+    document.documentElement.setAttribute('data-nxv-theme', name.endsWith('dark') ? 'dark' : 'light');
+    [...themeBar.children].forEach((b, i) => b.setAttribute('aria-pressed', String(THEMES[i] === name)));
+    render();
+  };
+  themeBar.appendChild(button);
+});
+document.documentElement.setAttribute('data-nxv-theme', 'light');
+
+/** Read theme tokens back out of CSS so the charts and the DOM agree. */
+function tokens() {
+  const style = getComputedStyle(document.documentElement);
+  const read = name => style.getPropertyValue(name).trim();
+  const count = parseInt(read('--nxv-cat-count') || '0', 10);
+  return {
+    categorical: Array.from({length: count}, (_, i) => read(`--nxv-cat-${i + 1}`)),
+    text: read('--nxv-text'),
+    textSecondary: read('--nxv-text-secondary'),
+    grid: read('--nxv-grid'),
+    border: read('--nxv-border'),
+    background: read('--nxv-background'),
+    font: read('--nxv-font'),
+    accent: read('--nxv-accent'),
+  };
+}
+
+function vegaConfig() {
+  const t = tokens();
+  return {
+    background: 'transparent',
+    font: t.font,
+    view: {stroke: 'transparent'},
+    range: {category: t.categorical},
+    axis: {
+      labelColor: t.textSecondary, titleColor: t.textSecondary,
+      gridColor: t.grid, domainColor: t.border, tickColor: t.border,
+      labelFontSize: 12, titleFontSize: 12,
+    },
+    axisBand: {grid: false, domain: false, ticks: false},
+    legend: {labelColor: t.textSecondary, titleColor: t.textSecondary, symbolType: 'circle'},
+    bar: {fill: t.categorical[0], cornerRadiusEnd: 3},
+    line: {stroke: t.categorical[0], strokeWidth: 2},
+    point: {fill: t.categorical[0], filled: true},
+    arc: {fill: t.categorical[0]},
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Demo payloads
+// ---------------------------------------------------------------------------
+const ROWS = [
+  {region: 'West',  quarter: '2026-Q1', revenue: 128, orders: 41},
+  {region: 'East',  quarter: '2026-Q1', revenue: 96,  orders: 33},
+  {region: 'North', quarter: '2026-Q1', revenue: 152, orders: 48},
+  {region: 'West',  quarter: '2026-Q2', revenue: 141, orders: 45},
+  {region: 'East',  quarter: '2026-Q2', revenue: 88,  orders: 29},
+  {region: 'North', quarter: '2026-Q2', revenue: 175, orders: 56},
+];
+
+const CHARTS = [
+  {
+    title: 'Revenue by region',
+    subtitle: 'ranked bar',
+    spec: {
+      data: {values: ROWS}, width: 'container', height: 200,
+      mark: 'bar',
+      encoding: {
+        y: {field: 'region', type: 'nominal', sort: '-x', axis: {title: null}},
+        x: {field: 'revenue', type: 'quantitative', aggregate: 'sum', axis: {title: null}},
+      },
+    },
+  },
+  {
+    title: 'Revenue by quarter',
+    subtitle: 'multi-series — exercises the categorical palette',
+    spec: {
+      data: {values: ROWS}, width: 'container', height: 200,
+      mark: {type: 'line', point: true},
+      encoding: {
+        // Quarter labels are ordinal, NOT temporal — Vega-Lite cannot parse
+        // "2026-Q1" as a date. This is the bug tier-2 validation catches in
+        // the shipped corpus.
+        x: {field: 'quarter', type: 'ordinal', axis: {title: null}},
+        y: {field: 'revenue', type: 'quantitative', axis: {title: null}},
+        color: {field: 'region', type: 'nominal'},
+      },
+    },
+  },
+];
+
+const KPIS = [
+  {subtype: 'counter', label: 'Active users', value: '12,480'},
+  {subtype: 'percent-change', label: 'Revenue vs last quarter', value: '+12.4', unit: '%', direction: 'up'},
+  {subtype: 'percent-change', label: 'Churn vs last quarter', value: '-3.1', unit: '%', direction: 'down', invert: true},
+  {subtype: 'target-vs-actual', label: 'Completion rate', value: '87.4', unit: '%', pct: 87.4, target: 90},
+];
+
+const TABLE = {
+  columns: [
+    {field: 'name',      title: 'Owner',    renderer: 'avatar_name'},
+    {field: 'progress',  title: 'Progress', renderer: 'progress_bar'},
+    {field: 'trend',     title: 'Trend',    renderer: 'sparkline'},
+    {field: 'status',    title: 'Status',   renderer: 'pill'},
+    {field: 'tier',      title: 'Tier',     renderer: 'badge'},
+    {field: 'load',      title: 'Load',     renderer: 'heatmap_cell'},
+    {field: 'delta',     title: 'Δ',        renderer: 'trend_arrow'},
+  ],
+  rows: [
+    {name: 'Ada Lovelace',  progress: 92, trend: [3, 5, 4, 7, 9, 11], status: ['On track', 'positive'], tier: 'P1', load: 0.28, delta: 4.2},
+    {name: 'Grace Hopper',  progress: 61, trend: [8, 7, 7, 5, 6, 4],  status: ['At risk', 'warning'],  tier: 'P2', load: 0.72, delta: -1.8},
+    {name: 'Katherine J.',  progress: 34, trend: [2, 2, 3, 2, 1, 1],  status: ['Blocked', 'negative'], tier: 'P1', load: 0.95, delta: 0},
+  ],
+};
+
+// ---------------------------------------------------------------------------
+// Renderers — the reference implementation for the non-Vega families
+// ---------------------------------------------------------------------------
+const escape = value => String(value).replace(/[&<>"]/g, c => (
+  {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]
+));
+
+const initials = name => name.split(/\s+/).map(w => w[0]).join('').slice(0, 2).toUpperCase();
+
+function sparkline(values) {
+  const min = Math.min(...values), max = Math.max(...values);
+  const span = (max - min) || 1;
+  const points = values.map((v, i) => [
+    (i / (values.length - 1)) * 78 + 1,
+    23 - ((v - min) / span) * 22,
+  ]);
+  const line = points.map(p => p.join(',')).join(' ');
+  const area = `1,23 ${line} 79,23`;
+  return `<svg viewBox="0 0 80 24" preserveAspectRatio="none" aria-hidden="true">
+    <polygon class="nxv-spark-area" points="${area}"></polygon>
+    <polyline class="nxv-spark-line" points="${line}"></polyline>
+  </svg>`;
+}
+
+function cell(renderer, value) {
+  const cls = `nxv-cell--${renderer.replace(/_/g, '-')}`;
+  switch (renderer) {
+    case 'avatar_name':
+      return `<span class="${cls}"><span class="nxv-avatar">${escape(initials(value))}</span>${escape(value)}</span>`;
+    case 'progress_bar': {
+      const tone = value >= 80 ? 'positive' : value >= 50 ? 'warning' : 'negative';
+      return `<span class="${cls}">
+        <span class="nxv-track"><span class="nxv-fill nxv-fill--${tone}" style="width:${value}%"></span></span>
+        <span class="nxv-pct">${value}%</span>
+      </span>`;
+    }
+    case 'sparkline':
+      return `<span class="${cls}">${sparkline(value)}</span>`;
+    case 'pill': {
+      const [label, tone] = value;
+      return `<span class="${cls} is-${tone}">${escape(label)}</span>`;
+    }
+    case 'badge':
+      return `<span class="${cls}">${escape(value)}</span>`;
+    case 'heatmap_cell':
+      return `<span class="${cls}" style="--nxv-heat:${value}">${(value * 100).toFixed(0)}%</span>`;
+    case 'trend_arrow': {
+      const dir = value > 0 ? 'up' : value < 0 ? 'down' : 'flat';
+      const glyph = {up: '▲', down: '▼', flat: '—'}[dir];
+      return `<span class="${cls} is-${dir}">${glyph} ${Math.abs(value).toFixed(1)}</span>`;
+    }
+    default:
+      return escape(value);
+  }
+}
+
+function kpiTile(kpi) {
+  const body = [];
+  body.push(`<span class="nxv-kpi__label">${escape(kpi.label)}</span>`);
+
+  if (kpi.subtype === 'percent-change') {
+    // "Down" is good for churn, so direction and sentiment are separate.
+    const good = kpi.invert ? kpi.direction === 'down' : kpi.direction === 'up';
+    const tone = good ? 'up' : 'down';
+    const glyph = kpi.direction === 'up' ? '▲' : '▼';
+    body.push(`<span class="nxv-kpi__value">${escape(kpi.value)}<span class="nxv-kpi__unit">${escape(kpi.unit || '')}</span></span>`);
+    body.push(`<span class="nxv-kpi__delta nxv-kpi__delta--${tone}">${glyph} vs last quarter</span>`);
+  } else if (kpi.subtype === 'target-vs-actual') {
+    const tone = kpi.pct >= kpi.target ? 'over' : 'under';
+    body.push(`<span class="nxv-kpi__value">${escape(kpi.value)}<span class="nxv-kpi__unit">${escape(kpi.unit || '')}</span></span>`);
+    body.push(`<span class="nxv-kpi__track"><span class="nxv-kpi__fill nxv-kpi__fill--${tone}" style="width:${Math.min(kpi.pct, 100)}%"></span></span>`);
+    body.push(`<span class="nxv-kpi__target">target ${kpi.target}${escape(kpi.unit || '')}</span>`);
+  } else {
+    body.push(`<span class="nxv-kpi__value">${escape(kpi.value)}</span>`);
+  }
+
+  return `<div class="nxv-card"><div class="nxv-kpi nxv-kpi--${kpi.subtype}">${body.join('')}</div></div>`;
+}
+
+// ---------------------------------------------------------------------------
+function render() {
+  const config = vegaConfig();
+
+  document.getElementById('charts').innerHTML = CHARTS.map((c, i) => `
+    <div class="nxv-card">
+      <div class="nxv-card__header">
+        <h3 class="nxv-card__title">${escape(c.title)}</h3>
+        <span class="nxv-card__subtitle">${escape(c.subtitle)}</span>
+      </div>
+      <div class="nxv-card__body" id="chart-${i}"></div>
+    </div>`).join('');
+
+  CHARTS.forEach((c, i) => {
+    vegaEmbed(`#chart-${i}`, {...c.spec, config}, {actions: false}).catch(console.error);
+  });
+
+  document.getElementById('kpis').innerHTML = KPIS.map(kpiTile).join('');
+
+  document.getElementById('table').innerHTML = `
+    <thead><tr>${TABLE.columns.map(c => `<th>${escape(c.title)}</th>`).join('')}</tr></thead>
+    <tbody>${TABLE.rows.map(row => `<tr>${
+      TABLE.columns.map(c => `<td>${cell(c.renderer, row[c.field])}</td>`).join('')
+    }</tr>`).join('')}</tbody>`;
+}
+
+render();
+</script>
+</body>
+</html>

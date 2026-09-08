@@ -1,0 +1,42 @@
+name: nexcraftviz-dark
+mode: dark
+description: >-
+  The default dark theme. Not the light palette inverted — dark backgrounds
+  need lighter, less saturated marks to hit the same contrast, so the
+  categorical ramp is lifted rather than reused.
+
+palette:
+  categorical:
+    - "#3EC5E0"   # teal
+    - "#F09A5E"   # rust
+    - "#8FA0F0"   # indigo
+    - "#DCC26A"   # ochre
+    - "#E88BB0"   # plum
+    - "#6FD08C"   # forest
+    - "#B3A6F5"   # slate violet
+    - "#EE8F8F"   # brick
+  sequential: tealblues
+  diverging: redblue
+  ordinal: tealblues
+
+semantic:
+  positive: "#4ADE80"
+  negative: "#F87171"
+  warning: "#FBBF24"
+  neutral: "#94A3B8"
+  target: "#94A3B8"
+  accent: "#3EC5E0"
+
+surfaces:
+  background: "#111827"
+  surface: "#161E2E"
+  surface_alt: "#1F2937"
+  border: "#334155"
+  border_strong: "#475569"
+  grid: "#293548"
+
+text:
+  primary: "#F1F5F9"
+  secondary: "#CBD5E1"
+  muted: "#94A3B8"
+  inverse: "#0F172A"

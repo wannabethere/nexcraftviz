@@ -1,0 +1,44 @@
+name: nexcraftviz-light
+mode: light
+description: >-
+  The default light theme. A teal-anchored categorical ramp chosen so that
+  adjacent entries stay distinguishable and every entry clears WCAG 1.4.11
+  (3:1) against the plot background.
+
+palette:
+  # Ordered for a reason: the first entry is the single-series colour, so it
+  # has to work alone as well as in a set.
+  categorical:
+    - "#0C8BA6"   # teal
+    - "#B8541F"   # rust
+    - "#4C5FAF"   # indigo
+    - "#8A6D1F"   # ochre
+    - "#96345F"   # plum
+    - "#2F7A45"   # forest
+    - "#6A5ACD"   # slate violet
+    - "#A04545"   # brick
+  sequential: tealblues
+  diverging: redblue
+  ordinal: tealblues
+
+semantic:
+  positive: "#15803D"
+  negative: "#B91C1C"
+  warning: "#B45309"
+  neutral: "#64748B"
+  target: "#78849B"
+  accent: "#0C8BA6"
+
+surfaces:
+  background: "#FFFFFF"
+  surface: "#FFFFFF"
+  surface_alt: "#F6F8FA"
+  border: "#E2E8F0"
+  border_strong: "#CBD5E1"
+  grid: "#EDF1F5"
+
+text:
+  primary: "#0F172A"
+  secondary: "#475569"
+  muted: "#667085"
+  inverse: "#FFFFFF"
