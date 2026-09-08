@@ -150,6 +150,50 @@ distinguishable from *each other* — which WCAG does not cover and a stacked ba
 badly needs. Our own themes must pass outright; the derived ones carry a
 recorded deviation list, because preserving upstream's palette is the point.
 
+### `table` and `render.html` — the other two families
+
+Charts have a renderer. The other two payload families do not, and that is a
+live defect rather than a gap in this package: a `table_with_cells` payload
+reaches the frontend, fails to parse as Vega-Lite, and degrades to an untyped
+grid, so avatars, progress bars and pills are silently dropped. 30 of the 200
+corpus pairs emit that type.
+
+`table.schema` writes the contract down as types, taken from what the corpus
+actually emits rather than invented — ten renderers (`number`, `text`,
+`avatar_name`, `heatmap_cell`, `progress_bar`, `pill`, `sparkline`, `badge`,
+`date`, `trend_arrow`), keyed on `render`/`header`, with `color_map`,
+`min`/`max`, `format`, `subtitle_field` and `muted` as per-renderer options.
+Tones are judgements (`pass` / `fix` / `fail` / `muted`), not colours — what
+"needs attention" looks like is the theme's business.
+
+`table.build` turns rows into that contract with **no model involved**, which is
+what makes table-first output free: results land, the table draws immediately,
+and the chart follows. Renderer choice comes from the profile first and column
+names second — a column called `status` holding 400 distinct strings is not a
+pill, and a column called `x` holding `Pass`/`Fail` is.
+
+`render.html` is the reference implementation for both families, in Python so it
+is testable and reusable rather than trapped in a demo page. It targets the
+`.nxv-*` classes from `theme.css`, so including the generated stylesheet themes
+tables and KPI tiles alongside the charts.
+
+`table.sample` exists because the 30 table pairs ship **no rows at all** — so
+nothing could show them, not even a design review. Synthesised values are chosen
+to exercise the renderer (a progress bar sweeps its full range; a pill column
+hits every tone), and every surface that uses them says so.
+
+### `recommend.rules`
+
+Deterministic chart ranking from the profile. Two decisions carry most of the
+weight:
+
+- **A unique column is not automatically an identifier.** Every `GROUP BY region`
+  result has one row per region; treating uniqueness alone as an id lost the
+  dimension on the most common chart shape there is.
+- **Not every date is a time axis.** `next_audit` on a per-business-unit result
+  is an *attribute*. `DataProfile.time_axis` separates the two, and without it
+  the rules recommended a line chart for data containing no series.
+
 ### `corpus`
 
 200 hand-authored chart pairs across 20 chart types, each carrying a

@@ -32,6 +32,10 @@ _MEASURE_HINTS = (
 #: Column names that read as an identifier even when numeric.
 _ID_HINTS = ("id", "_id", "key", "code", "number", "no", "guid", "uuid", "sk", "rk")
 
+#: Above this many distinct values, a unique text column is an identifier rather
+#: than a label — no categorical axis can usefully show more than this.
+_MAX_LABEL_CARDINALITY = 50
+
 
 @dataclass
 class ColumnProfile:
@@ -118,6 +122,44 @@ class DataProfile:
     @property
     def times(self) -> list[ColumnProfile]:
         return self.by_role("time")
+
+    @property
+    def series(self) -> list[ColumnProfile]:
+        return self.by_role("series")
+
+    @property
+    def time_axis(self) -> ColumnProfile | None:
+        """The temporal column a trend chart should plot against, if any.
+
+        Not every date is an axis. `next_audit` on a per-business-unit result is
+        an *attribute* — one date per row, describing that row — and plotting a
+        line against it produces a chart nobody asked for. A temporal column
+        earns the axis when the rows are observations over it, which shows up as
+        either repeated timestamps (several rows per period) or the time column
+        being the only thing distinguishing rows.
+
+        Returns the widest qualifying column, or None when every date is an
+        attribute.
+        """
+        candidates = self.times
+        if not candidates:
+            return None
+
+        entity_column = any(
+            column.is_unique and column.role == "dimension" for column in self.columns
+        )
+        for column in sorted(candidates, key=lambda c: -c.distinct):
+            if column.distinct < 3:
+                continue
+            # Repeated timestamps mean rows are grouped within periods — a
+            # series, unambiguously.
+            if column.distinct < self.row_count:
+                return column
+            # One row per timestamp is still a series, unless something else
+            # already identifies the row, in which case the date describes it.
+            if not entity_column:
+                return column
+        return None
 
     # ---- signatures -------------------------------------------------------
 
@@ -209,6 +251,7 @@ def _profile_column(name: str, values: list[Any]) -> ColumnProfile:
     role = _infer_role(
         name=name,
         vega_type=vega_type,
+        python_type=python_type,
         distinct=distinct,
         n_present=len(present),
         is_unique=is_unique,
@@ -239,6 +282,12 @@ def _infer_vega_type(name: str, present: list[Any]) -> tuple[str, str]:
     if not present:
         return "nominal", "NoneType"
 
+    # A list of numbers is a per-row series (a sparkline column). Vega-Lite
+    # cannot encode it directly, so the measurement type stays nominal, but the
+    # role below records what it really is.
+    if all(_is_number_list(v) for v in present):
+        return "nominal", "series"
+
     if all(isinstance(v, bool) for v in present):
         return "nominal", "bool"
     if all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in present):
@@ -250,6 +299,14 @@ def _infer_vega_type(name: str, present: list[Any]) -> tuple[str, str]:
             return "temporal", "str"
         return "nominal", "str"
     return "nominal", type(present[0]).__name__
+
+
+def _is_number_list(value: Any) -> bool:
+    return (
+        isinstance(value, (list, tuple))
+        and len(value) >= 2
+        and all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in value)
+    )
 
 
 def _looks_temporal(name: str, values: list[str]) -> bool:
@@ -282,15 +339,23 @@ def _looks_temporal(name: str, values: list[str]) -> bool:
 
 
 def _infer_role(
-    *, name: str, vega_type: str, distinct: int, n_present: int, is_unique: bool
+    *,
+    name: str,
+    vega_type: str,
+    python_type: str,
+    distinct: int,
+    n_present: int,
+    is_unique: bool,
 ) -> str:
-    """Classify a column as time / measure / dimension / identifier.
+    """Classify a column as time / measure / dimension / identifier / series.
 
     Role is what recommendation actually reasons about — "one time column, one
     measure, one low-cardinality dimension" picks a chart far better than
     "two quantitative, one nominal" does.
     """
     lowered = name.lower()
+    if python_type == "series":
+        return "series"
     if vega_type == "temporal":
         return "time"
 
@@ -304,9 +369,13 @@ def _infer_role(
             return "identifier"
         return "measure"
 
-    # Nominal: a column with a distinct value per row is a label/identifier, not
-    # something to group by.
-    if is_unique and n_present > 5:
+    # Nominal. Uniqueness alone is NOT enough to call something an identifier:
+    # every `GROUP BY region` result has exactly one row per region, so the most
+    # common chart shape there is would be misread as a list of ids and lose its
+    # dimension entirely. An identifier is unique *and* either named like a key
+    # or high-cardinality enough that no axis could show it.
+    looks_like_id = any(lowered == h or lowered.endswith(h) for h in _ID_HINTS)
+    if is_unique and (looks_like_id or distinct > _MAX_LABEL_CARDINALITY):
         return "identifier"
     return "dimension"
 

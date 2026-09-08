@@ -35,8 +35,12 @@ in the loop, and undoable — every edit returns its own inverse patch.
 | `spec.diff` | JSON-Patch diffing; this is where undo comes from |
 | `data.profile` | Column typing, cardinality, roles (measure / dimension / time / identifier) |
 | `render` | SVG / PNG / compiled-Vega via `vl-convert` — no Node, no browser |
+| `render.html` | Reference HTML for the KPI and rich-table families, which have no renderer in production |
+| `table` | The `table_with_cells` contract, plus a builder that turns rows into it with no model involved |
+| `theme` | One token source → a Vega config *and* a CSS bundle |
+| `recommend.rules` | Deterministic chart ranking from the profile |
 
-Themes, skills, corpus retrieval, composition and BI export land in subsequent
+Skills, corpus retrieval, composition and BI export land in subsequent
 milestones; see `docs/`.
 
 ## Validation, and why tier 2 matters
@@ -77,6 +81,39 @@ result.describe()  # ["mark.color: '#4c78a8' → '#0c8ba6'", ...]
 result.inverse     # patch that undoes the edit
 result.failed      # ops that could not apply, with reasons — the rest still applied
 ```
+
+## Table first
+
+The table costs nothing, so it should not wait for the chart:
+
+```python
+from nexcraftviz.table import build_table
+from nexcraftviz.render.html import render_table
+
+table = build_table(rows)          # deterministic — no model, no network
+html = render_table(table)         # themed by the generated stylesheet
+```
+
+Renderers are chosen from the profile: a share becomes a progress bar, a bounded
+score a heatmap cell, a judged status a tone-mapped pill, a signed movement an
+arrow, a list of numbers a sparkline. The chart is then generated from the same
+rows, and lands when it lands.
+
+## Playground
+
+```bash
+nexcraftviz gallery --out playground
+```
+
+Three generated pages, all built from real package output so none of them can
+drift from what the code does:
+
+- **`index.html`** — every renderer in one place. This is the reference
+  implementation for the two families that have no renderer in production.
+- **`usecase.html`** — one scenario end to end: the table lands, then the
+  profile, the rules-based recommendation, and four natural-language edits
+  applied as operations with the resulting diff shown beside each chart.
+- **`gallery.html`** — all 200 corpus pairs, table first and chart second.
 
 ## Install
 

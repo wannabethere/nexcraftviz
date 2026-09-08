@@ -50,9 +50,30 @@ def test_a_measure_named_like_a_count_stays_a_measure() -> None:
     assert profile_rows(rows).get("order_count").role == "measure"
 
 
-def test_a_unique_string_column_is_an_identifier() -> None:
-    rows = [{"label": f"row-{i}", "n": 1} for i in range(10)]
+def test_a_unique_low_cardinality_label_is_a_dimension_not_an_identifier() -> None:
+    """Every `GROUP BY region` result has one row per region.
+
+    Treating uniqueness alone as an identifier lost the dimension on the single
+    most common chart shape there is, and recommended a list instead of a bar.
+    """
+    rows = [{"region": name, "revenue": 1} for name in ("West", "East", "North", "South")]
+    assert profile_rows(rows).get("region").role == "dimension"
+
+
+def test_a_unique_id_named_column_is_still_an_identifier() -> None:
+    rows = [{"order_code": f"ORD-{i}", "n": 1} for i in range(10)]
+    assert profile_rows(rows).get("order_code").role == "identifier"
+
+
+def test_a_unique_high_cardinality_column_is_an_identifier() -> None:
+    """No categorical axis can show 60 labels, so it is not a dimension."""
+    rows = [{"label": f"row-{i}", "n": 1} for i in range(60)]
     assert profile_rows(rows).get("label").role == "identifier"
+
+
+def test_a_list_valued_column_is_a_series() -> None:
+    rows = [{"name": "a", "trend": [1, 2, 3]}, {"name": "b", "trend": [4, 5, 6]}]
+    assert profile_rows(rows).get("trend").role == "series"
 
 
 @pytest.mark.parametrize(

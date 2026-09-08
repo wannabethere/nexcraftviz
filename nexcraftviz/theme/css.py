@@ -21,17 +21,26 @@ from __future__ import annotations
 
 from nexcraftviz.theme.tokens import ThemeTokens
 
-#: Cell renderers the `table_with_cells` chart type emits. Each gets a class so
-#: a frontend can style them without inventing its own vocabulary.
+#: Cell renderers the `table_with_cells` chart type emits, taken from the corpus
+#: rather than guessed — all ten, in frequency order. Each gets a class so a
+#: frontend can style them without inventing its own vocabulary.
 CELL_RENDERERS = (
+    "number",
+    "text",
     "avatar_name",
-    "progress_bar",
-    "sparkline",
-    "pill",
-    "badge",
     "heatmap_cell",
+    "progress_bar",
+    "pill",
+    "sparkline",
+    "badge",
+    "date",
     "trend_arrow",
 )
+
+#: Semantic tones a column's `color_map` assigns. The corpus speaks in
+#: judgements — "fix" is a call to action — rather than in colours, which is the
+#: right level: what "needs attention" looks like is the theme's business.
+TONES = ("pass", "fix", "fail", "muted")
 
 
 def to_variables(theme: ThemeTokens) -> dict[str, str]:
@@ -267,6 +276,15 @@ def _components_block() -> str:
 }}
 
 .nxv-table tbody tr:hover {{ background: var(--nxv-surface-alt); }}
+
+.nxv-table__more {{
+  color: var(--nxv-text-muted);
+  font-size: var(--nxv-size-sm);
+  margin: var(--nxv-space) 0 0;
+}}
+
+.nxv-empty {{ color: var(--nxv-text-muted); font-style: italic; }}
+.nxv-chart {{ display: block; width: 100%; }}
 .nxv-table td.nxv-num {{ font-variant-numeric: tabular-nums; text-align: right; }}
 
 /* ---- per-column cell renderers ---- */
@@ -301,6 +319,18 @@ def _cell_rule(renderer: str) -> str:
   align-items: center;
   display: flex;
   gap: var(--nxv-space);
+}}
+
+{base} .nxv-avatar__text {{
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+  min-width: 0;
+}}
+
+{base} .nxv-avatar__sub {{
+  color: var(--nxv-text-muted);
+  font-size: var(--nxv-size-xs);
 }}
 
 {base} .nxv-avatar {{
@@ -361,19 +391,24 @@ def _cell_rule(renderer: str) -> str:
   white-space: nowrap;
 }}
 
-{base}.is-positive {{
+{base}.is-pass {{
   background: color-mix(in srgb, var(--nxv-positive) 15%, transparent);
   color: var(--nxv-positive);
 }}
 
-{base}.is-negative {{
+{base}.is-fix {{
+  background: color-mix(in srgb, var(--nxv-warning) 18%, transparent);
+  color: var(--nxv-warning);
+}}
+
+{base}.is-fail {{
   background: color-mix(in srgb, var(--nxv-negative) 15%, transparent);
   color: var(--nxv-negative);
 }}
 
-{base}.is-warning {{
-  background: color-mix(in srgb, var(--nxv-warning) 18%, transparent);
-  color: var(--nxv-warning);
+{base}.is-muted {{
+  background: var(--nxv-surface-alt);
+  color: var(--nxv-text-muted);
 }}""",
         "badge": f"""{base} {{
   border: var(--nxv-border-width) solid var(--nxv-border-strong);
@@ -384,7 +419,13 @@ def _cell_rule(renderer: str) -> str:
   letter-spacing: 0.02em;
   padding: 1px 6px;
   text-transform: uppercase;
-}}""",
+  white-space: nowrap;
+}}
+
+{base}.is-pass {{ border-color: var(--nxv-positive); color: var(--nxv-positive); }}
+{base}.is-fix {{ border-color: var(--nxv-warning); color: var(--nxv-warning); }}
+{base}.is-fail {{ border-color: var(--nxv-negative); color: var(--nxv-negative); }}
+{base}.is-muted {{ border-color: var(--nxv-border); color: var(--nxv-text-muted); }}""",
         "heatmap_cell": f"""{base} {{
   border-radius: var(--nxv-radius-sm);
   display: block;
@@ -396,6 +437,25 @@ def _cell_rule(renderer: str) -> str:
 /* Intensity is set inline per cell as --nxv-heat (0-1). */
 {base}[style*="--nxv-heat"] {{
   background: color-mix(in srgb, var(--nxv-accent) calc(var(--nxv-heat) * 100%), transparent);
+}}""",
+        "number": f"""{base} {{
+  display: block;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}}
+
+{base}.is-muted {{ color: var(--nxv-text-muted); }}""",
+        "text": f"""{base} {{
+  color: var(--nxv-text);
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}}""",
+        "date": f"""{base} {{
+  color: var(--nxv-text-secondary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }}""",
         "trend_arrow": f"""{base} {{
   align-items: center;

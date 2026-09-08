@@ -277,13 +277,50 @@
 }
 
 .nxv-table tbody tr:hover { background: var(--nxv-surface-alt); }
+
+.nxv-table__more {
+  color: var(--nxv-text-muted);
+  font-size: var(--nxv-size-sm);
+  margin: var(--nxv-space) 0 0;
+}
+
+.nxv-empty { color: var(--nxv-text-muted); font-style: italic; }
+.nxv-chart { display: block; width: 100%; }
 .nxv-table td.nxv-num { font-variant-numeric: tabular-nums; text-align: right; }
 
 /* ---- per-column cell renderers ---- */
+.nxv-cell--number {
+  display: block;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.nxv-cell--number.is-muted { color: var(--nxv-text-muted); }
+
+.nxv-cell--text {
+  color: var(--nxv-text);
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .nxv-cell--avatar-name {
   align-items: center;
   display: flex;
   gap: var(--nxv-space);
+}
+
+.nxv-cell--avatar-name .nxv-avatar__text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+  min-width: 0;
+}
+
+.nxv-cell--avatar-name .nxv-avatar__sub {
+  color: var(--nxv-text-muted);
+  font-size: var(--nxv-size-xs);
 }
 
 .nxv-cell--avatar-name .nxv-avatar {
@@ -298,6 +335,19 @@
   height: 28px;
   justify-content: center;
   width: 28px;
+}
+
+.nxv-cell--heatmap-cell {
+  border-radius: var(--nxv-radius-sm);
+  display: block;
+  font-variant-numeric: tabular-nums;
+  padding: 4px 8px;
+  text-align: right;
+}
+
+/* Intensity is set inline per cell as --nxv-heat (0-1). */
+.nxv-cell--heatmap-cell[style*="--nxv-heat"] {
+  background: color-mix(in srgb, var(--nxv-accent) calc(var(--nxv-heat) * 100%), transparent);
 }
 
 .nxv-cell--progress-bar {
@@ -331,11 +381,6 @@
   text-align: right;
 }
 
-.nxv-cell--sparkline { display: block; line-height: 0; }
-.nxv-cell--sparkline svg { display: block; height: 24px; width: 80px; }
-.nxv-cell--sparkline .nxv-spark-line { fill: none; stroke: var(--nxv-accent); stroke-width: 1.5; }
-.nxv-cell--sparkline .nxv-spark-area { fill: var(--nxv-accent); opacity: 0.15; }
-
 .nxv-cell--pill {
   background: var(--nxv-surface-alt);
   border-radius: 999px;
@@ -347,20 +392,30 @@
   white-space: nowrap;
 }
 
-.nxv-cell--pill.is-positive {
+.nxv-cell--pill.is-pass {
   background: color-mix(in srgb, var(--nxv-positive) 15%, transparent);
   color: var(--nxv-positive);
 }
 
-.nxv-cell--pill.is-negative {
+.nxv-cell--pill.is-fix {
+  background: color-mix(in srgb, var(--nxv-warning) 18%, transparent);
+  color: var(--nxv-warning);
+}
+
+.nxv-cell--pill.is-fail {
   background: color-mix(in srgb, var(--nxv-negative) 15%, transparent);
   color: var(--nxv-negative);
 }
 
-.nxv-cell--pill.is-warning {
-  background: color-mix(in srgb, var(--nxv-warning) 18%, transparent);
-  color: var(--nxv-warning);
+.nxv-cell--pill.is-muted {
+  background: var(--nxv-surface-alt);
+  color: var(--nxv-text-muted);
 }
+
+.nxv-cell--sparkline { display: block; line-height: 0; }
+.nxv-cell--sparkline svg { display: block; height: 24px; width: 80px; }
+.nxv-cell--sparkline .nxv-spark-line { fill: none; stroke: var(--nxv-accent); stroke-width: 1.5; }
+.nxv-cell--sparkline .nxv-spark-area { fill: var(--nxv-accent); opacity: 0.15; }
 
 .nxv-cell--badge {
   border: var(--nxv-border-width) solid var(--nxv-border-strong);
@@ -371,19 +426,18 @@
   letter-spacing: 0.02em;
   padding: 1px 6px;
   text-transform: uppercase;
+  white-space: nowrap;
 }
 
-.nxv-cell--heatmap-cell {
-  border-radius: var(--nxv-radius-sm);
-  display: block;
+.nxv-cell--badge.is-pass { border-color: var(--nxv-positive); color: var(--nxv-positive); }
+.nxv-cell--badge.is-fix { border-color: var(--nxv-warning); color: var(--nxv-warning); }
+.nxv-cell--badge.is-fail { border-color: var(--nxv-negative); color: var(--nxv-negative); }
+.nxv-cell--badge.is-muted { border-color: var(--nxv-border); color: var(--nxv-text-muted); }
+
+.nxv-cell--date {
+  color: var(--nxv-text-secondary);
   font-variant-numeric: tabular-nums;
-  padding: 4px 8px;
-  text-align: right;
-}
-
-/* Intensity is set inline per cell as --nxv-heat (0-1). */
-.nxv-cell--heatmap-cell[style*="--nxv-heat"] {
-  background: color-mix(in srgb, var(--nxv-accent) calc(var(--nxv-heat) * 100%), transparent);
+  white-space: nowrap;
 }
 
 .nxv-cell--trend-arrow {

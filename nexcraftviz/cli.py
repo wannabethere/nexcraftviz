@@ -61,6 +61,19 @@ def main(argv: list[str] | None = None) -> int:
     p_ops = sub.add_parser("ops", help="List the available operations and their arguments.")
     p_ops.add_argument("--json", action="store_true", help="Emit the JSON schema instead.")
 
+    p_table = sub.add_parser("table", help="Build a rich table from a data file.")
+    p_table.add_argument("data", help="Path to .csv or .json.")
+    p_table.add_argument("--out", help="Write HTML here (default: the spec, to stdout).")
+    p_table.add_argument("--title", default="", help="Table title.")
+
+    p_recommend = sub.add_parser("recommend", help="Rank chart types for a data file.")
+    p_recommend.add_argument("data", help="Path to .csv or .json.")
+    p_recommend.add_argument("--question", default="", help="Nudge the ranking.")
+
+    p_gallery = sub.add_parser("gallery", help="Generate the playground pages.")
+    p_gallery.add_argument("--out", default="playground", help="Output directory.")
+    p_gallery.add_argument("--limit", type=int, help="Only this many corpus pairs.")
+
     p_theme = sub.add_parser("theme", help="List, inspect, audit and apply themes.")
     theme_sub = p_theme.add_subparsers(dest="theme_command", required=True)
 
@@ -109,6 +122,12 @@ def _dispatch(args: argparse.Namespace) -> int:
         return _cmd_ops(args)
     if args.command == "theme":
         return _cmd_theme(args)
+    if args.command == "table":
+        return _cmd_table(args)
+    if args.command == "recommend":
+        return _cmd_recommend(args)
+    if args.command == "gallery":
+        return _cmd_gallery(args)
     raise ValueError(f"unknown command {args.command!r}")
 
 
@@ -197,6 +216,65 @@ def _cmd_ops(args: argparse.Namespace) -> int:
             description = info.description or ""
             required = "required" if info.is_required() else "optional"
             print(f"      - {field_name} ({required}): {description}")
+    return 0
+
+
+def _cmd_table(args: argparse.Namespace) -> int:
+    """Build a rich table from rows — the "render the table" half, with no LLM."""
+    from nexcraftviz.render.html import render_table
+    from nexcraftviz.table import build_table
+
+    table = build_table(load_rows(args.data), title=args.title)
+    if not table.columns:
+        print("no rows to render", file=sys.stderr)
+        return 2
+
+    if args.out:
+        Path(args.out).write_text(_table_page(table, render_table(table)), encoding="utf-8")
+        print(f"wrote {args.out}")
+        return 0
+
+    print(table.to_spec().to_json(indent=2))
+    return 0
+
+
+def _table_page(table: Any, body: str) -> str:
+    """A standalone page. The stylesheet is inlined so the file is portable."""
+    from nexcraftviz.theme import load as load_theme
+    from nexcraftviz.theme import to_bundle
+
+    css = to_bundle(load_theme("nexcraftviz-light"), load_theme("nexcraftviz-dark"))
+    title = table.title or "Table"
+    return (
+        "<!doctype html>\n<html lang=\"en\"><head><meta charset=\"utf-8\">"
+        "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
+        f"<title>{title}</title><style>{css}\n"
+        "body{background:var(--nxv-background);color:var(--nxv-text);"
+        "font-family:var(--nxv-font);margin:0;padding:24px}</style></head>"
+        f'<body><div class="nxv-card"><div class="nxv-card__header">'
+        f'<h3 class="nxv-card__title">{title}</h3></div>'
+        f'<div class="nxv-card__body">{body}</div></div></body></html>'
+    )
+
+
+def _cmd_recommend(args: argparse.Namespace) -> int:
+    from nexcraftviz.recommend.rules import recommend
+
+    profile = profile_rows(load_rows(args.data))
+    result = recommend(profile, question=args.question)
+    print(f"shape: {result.shape_signature}")
+    axis = profile.time_axis
+    print(f"time axis: {axis.name if axis else '(none)'}")
+    for entry in result:
+        print(f"  {entry.chart_type:<18} {entry.score:.2f}  {entry.reason}")
+    return 0
+
+
+def _cmd_gallery(args: argparse.Namespace) -> int:
+    from nexcraftviz.gallery import write
+
+    for path in write(args.out, limit=args.limit):
+        print(f"wrote {path} ({path.stat().st_size} bytes)")
     return 0
 
 
