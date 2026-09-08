@@ -39,6 +39,7 @@ in the loop, and undoable — every edit returns its own inverse patch.
 | `table` | The `table_with_cells` contract, plus a builder that turns rows into it with no model involved |
 | `theme` | One token source → a Vega config *and* a CSS bundle |
 | `recommend.rules` | Deterministic chart ranking from the profile |
+| `compose` | Two ways to combine charts, plus placement operations with undo |
 
 Skills, corpus retrieval, composition and BI export land in subsequent
 milestones; see `docs/`.
@@ -99,6 +100,46 @@ score a heatmap cell, a judged status a tone-mapped pill, a signed movement an
 arrow, a list of numbers a sparkline. The chart is then generated from the same
 rows, and lands when it lands.
 
+## Combining charts
+
+Two forms, because neither covers the other:
+
+```python
+from nexcraftviz.compose import concat, group, tile, widget
+
+# One spec: one render, one PNG, optional shared scales. Vega views only.
+combined = concat([revenue, orders], direction="horizontal", resolve_scales="shared")
+
+# One widget: any family, nested panels, a 12-column grid.
+board = widget(
+    group(
+        tile(funnel, title="Pipeline", span="two-thirds"),
+        tile(stats=[...], title="Conversion", span="third"),
+        title="Hiring pipeline performance",
+    ),
+    tile(donut, title="Sourcing", span="half"),
+    tile(bars, title="Time to hire", span="half"),
+)
+```
+
+A tile can be *compound* — a headline KPI above a chart above a stat strip, in
+one card — which is not something Vega-Lite can express, since the headline and
+the strip are card furniture rather than marks.
+
+Placement is edited like anything else here:
+
+```python
+from nexcraftviz.compose import apply_widget_ops
+
+result = apply_widget_ops(board, [
+    {"op": "set_span", "tile": "tile-funnel", "span": "three-quarters"},
+    {"op": "group_tiles", "tiles": ["tile-sourcing", "tile-time-to-hire"],
+     "title": "Channel and speed"},
+])
+result.describe()   # what moved
+result.inverse      # patch that puts it back
+```
+
 ## Playground
 
 ```bash
@@ -113,6 +154,8 @@ drift from what the code does:
 - **`usecase.html`** — one scenario end to end: the table lands, then the
   profile, the rules-based recommendation, and four natural-language edits
   applied as operations with the resulting diff shown beside each chart.
+- **`widgets.html`** — combining charts: a compound tile, a grouped widget,
+  the same widget edited by placement operations, and the single-spec form.
 - **`gallery.html`** — all 200 corpus pairs, table first and chart second.
 
 ## Install

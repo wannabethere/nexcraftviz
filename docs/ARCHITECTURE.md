@@ -182,6 +182,52 @@ nothing could show them, not even a design review. Synthesised values are chosen
 to exercise the renderer (a progress bar sweeps its full range; a pill column
 hits every tone), and every surface that uses them says so.
 
+### `compose` — two ways to combine charts
+
+"Put these charts in one widget" means two different things, and the package
+does both because neither covers the other.
+
+**`compose.vega`** concatenates or layers specs into *one Vega-Lite spec*: one
+render, one PNG export, and the option of shared scales so panels can be read
+against each other. It holds Vega views only — a KPI tile or a rich table
+cannot go inside a `vconcat`, and `concat()` raises rather than emitting a spec
+that renders a blank panel.
+
+**`compose.widget`** holds *tiles*, of any family, in a 12-column grid. A tile
+can be compound (a headline KPI above a chart above a stat strip — one card,
+three parts) and tiles can nest inside titled `Group` panels. This is what a
+real dashboard needs, since two of the four payload families are not Vega.
+
+| | `compose.vega.concat` | `compose.widget.Widget` |
+|---|---|---|
+| Result | one spec | tiles in a layout |
+| Mixed families | no | yes |
+| Shared scales | yes | no |
+| PNG in one call | yes | per tile |
+
+**`compose.ops`** edits placement the way `spec.ops` edits a chart: `set_span`,
+`move_tile`, `group_tiles`, `ungroup_tiles`, `set_layout`, and so on. Placement
+is where people iterate most, so it gets the same bargain — a model picks the
+operation, code applies it, and the inverse comes from the diff. Operations are
+parsed *per operation* rather than up front, so one malformed argument does not
+discard the valid edits queued behind it.
+
+Two things the widget renderer learned the hard way, both now guarded by tests:
+`.nxv-grid` and `.nxv-grid--12` each set `grid-template-columns` at equal
+specificity, so an element carrying both silently loses every span; and
+rendering one widget twice on a page needs an `id_prefix`, or the duplicate DOM
+ids mean only the first copy ever gets a chart.
+
+### `examples`
+
+Worked reproductions of two real dashboard designs, kept as code so they stay
+runnable. `completion_gauge()` documents the two details that make a
+multi-ring gauge draw *nothing* while still validating at tier 3: `startAngle`
+belongs on the mark with the end angle as a `theta` encoding with
+`scale: null`, and `autosize: none` stops Vega re-fitting the view and shifting
+positioned arcs off centre. There is a test asserting the rendered PNG is not
+blank, because tier 3 cannot tell the difference.
+
 ### `recommend.rules`
 
 Deterministic chart ranking from the profile. Two decisions carry most of the

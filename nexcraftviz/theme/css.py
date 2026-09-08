@@ -290,6 +290,102 @@ def _components_block() -> str:
 /* ---- per-column cell renderers ---- */
 {cells}
 
+/* ---- widgets ---- */
+.nxv-widget {{ display: block; }}
+
+.nxv-widget__header {{ margin-bottom: calc(var(--nxv-space) * 2); }}
+
+.nxv-widget__title {{
+  font-size: var(--nxv-size-lg);
+  font-weight: var(--nxv-weight-bold);
+  margin: 0;
+}}
+
+.nxv-widget__description {{
+  color: var(--nxv-text-secondary);
+  margin: 4px 0 0;
+  max-width: 72ch;
+}}
+
+/* A group is a card that contains a grid — one level of structure inside a
+   widget, which is what lets a panel hold a hero chart beside its stats. */
+.nxv-group {{ padding: calc(var(--nxv-space) * 2); }}
+.nxv-group__body {{ margin-top: var(--nxv-space); }}
+.nxv-group > .nxv-grid {{ align-items: stretch; }}
+
+/* A compound tile stacks headline / payload / stats in one card. */
+.nxv-widget__tile--compound .nxv-card__body {{
+  display: flex;
+  flex-direction: column;
+  gap: var(--nxv-space);
+}}
+
+.nxv-tile__note {{
+  color: var(--nxv-text-muted);
+  font-size: var(--nxv-size-xs);
+  margin: var(--nxv-space) 0 0;
+}}
+
+/* ---- supporting stat strip ---- */
+.nxv-stats {{
+  border-top: var(--nxv-border-width) solid var(--nxv-border);
+  display: flex;
+  gap: var(--nxv-space);
+  justify-content: space-between;
+  padding-top: var(--nxv-space);
+}}
+
+.nxv-stat {{ display: flex; flex: 1; flex-direction: column; gap: 2px; min-width: 0; }}
+
+.nxv-stat__label {{
+  color: var(--nxv-text-secondary);
+  font-size: var(--nxv-size-xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}}
+
+.nxv-stat__value {{
+  color: var(--nxv-text);
+  font-size: var(--nxv-size-lg);
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--nxv-weight-bold);
+}}
+
+.nxv-stat__unit {{ color: var(--nxv-text-muted); font-size: var(--nxv-size-sm); }}
+.nxv-stat.is-pass .nxv-stat__value {{ color: var(--nxv-positive); }}
+.nxv-stat.is-fix .nxv-stat__value {{ color: var(--nxv-warning); }}
+.nxv-stat.is-fail .nxv-stat__value {{ color: var(--nxv-negative); }}
+.nxv-stat.is-muted .nxv-stat__value {{ color: var(--nxv-text-muted); }}
+
+/* ---- 12-column grid, for widgets that place tiles explicitly ---- */
+/* Used ALONE, never alongside `.nxv-grid`: both set grid-template-columns at
+   the same specificity, so whichever is written later in the sheet silently
+   wins and the spans stop meaning anything. */
+.nxv-grid--12 {{
+  align-items: start;
+  display: grid;
+  gap: calc(var(--nxv-space) * 2);
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+}}
+
+.nxv-grid--12 > .nxv-span--quarter {{ grid-column: span 3; }}
+.nxv-grid--12 > .nxv-span--third {{ grid-column: span 4; }}
+.nxv-grid--12 > .nxv-span--half {{ grid-column: span 6; }}
+.nxv-grid--12 > .nxv-span--two-thirds {{ grid-column: span 8; }}
+.nxv-grid--12 > .nxv-span--three-quarters {{ grid-column: span 9; }}
+.nxv-grid--12 > .nxv-span--full {{ grid-column: span 12; }}
+/* `auto` reaches the renderer only when a layout declined to assign a width. */
+.nxv-grid--12 > .nxv-span--auto {{ grid-column: span 3; }}
+
+@media (max-width: 900px) {{
+  .nxv-grid--12 > [class*="nxv-span--"] {{ grid-column: span 6; }}
+}}
+
+@media (max-width: 600px) {{
+  .nxv-grid--12 > [class*="nxv-span--"] {{ grid-column: span 12; }}
+}}
+
 /* ---- dashboard grid ---- */
 .nxv-grid {{
   display: grid;

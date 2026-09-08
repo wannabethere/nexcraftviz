@@ -189,8 +189,22 @@ def test_gallery_labels_synthesised_rows() -> None:
     assert "Rows synthesised" in build_gallery()
 
 
+def test_widgets_page_shows_both_forms_and_the_edits() -> None:
+    from nexcraftviz.gallery import build_widgets
+
+    html = build_widgets()
+    assert "nxv-group" in html                     # a grouped widget
+    assert "nxv-widget__tile--compound" in html     # a compound tile
+    assert "Operations" in html                     # placement edited by ops
+    assert "hconcat" in html                        # and the single-spec form
+    # Each rendering of the same widget must have its own mount ids.
+    assert 'id="w2-tile-funnel"' in html and 'id="w3-tile-funnel"' in html
+
+
 @pytest.mark.parametrize(
-    "name", ["usecase.html", "gallery.html", "playground.css", "playground.js"]
+    "name",
+    ["index.html", "usecase.html", "widgets.html", "gallery.html",
+     "playground.css", "playground.js"],
 )
 def test_write_emits_every_asset(tmp_path: Path, name: str) -> None:
     write(tmp_path, limit=5)

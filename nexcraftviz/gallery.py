@@ -314,6 +314,173 @@ def _gallery_card(pair: ChartPair, index: int) -> str:
 
 
 # ---------------------------------------------------------------------------
+# widgets — combining charts
+# ---------------------------------------------------------------------------
+
+#: Placement edits, phrased as a user would, with the operations each becomes.
+#: Placement is where people iterate most, so it gets the same treatment as
+#: chart editing: the model picks operations, code applies them, undo is free.
+WIDGET_EDITS: list[tuple[str, list[dict[str, Any]]]] = [
+    (
+        "make the funnel wider and shrink the stats beside it",
+        [
+            {"op": "set_span", "tile": "tile-funnel", "span": "three-quarters"},
+            {"op": "set_span", "tile": "tile-conversion", "span": "quarter"},
+        ],
+    ),
+    (
+        "put sourcing and time-to-hire in a panel of their own",
+        [{
+            "op": "group_tiles",
+            "tiles": ["tile-sourcing", "tile-time-to-hire"],
+            "title": "Channel and speed",
+            "id": "group-channels",
+        }],
+    ),
+    (
+        "move time-to-hire above sourcing",
+        [{"op": "move_tile", "tile": "tile-time-to-hire", "before": "tile-sourcing"}],
+    ),
+]
+
+
+def build_widgets() -> str:
+    """Two worked widgets, then the same widget edited by placement operations."""
+    from nexcraftviz.compose import apply_widget_ops, widget
+    from nexcraftviz.compose.vega import concat
+    from nexcraftviz.examples import (
+        completion_rate_tile,
+        sourcing_donut,
+        talent_acquisition_widget,
+        time_to_hire,
+    )
+
+    sections: list[str] = []
+
+    # 1 — the compound tile. It declares span="third", which is right on a
+    # dashboard and wrong shown on its own, so widen it for the demo — using
+    # the placement op, since that is the point being made.
+    compound = apply_widget_ops(
+        widget(completion_rate_tile(), title="", layout="single_column"),
+        [{"op": "set_span", "tile": "tile-completion-rate", "span": "full"}],
+    ).widget
+    sections.append(_step(
+        1,
+        "A compound tile",
+        "One card holding a headline with its delta, a multi-ring gauge, and the "
+        "three counts the headline is made of. Vega-Lite cannot express this — "
+        "the headline and the strip are card furniture around a chart, not marks "
+        "inside it — which is the whole reason widgets exist alongside "
+        "<code>vconcat</code>.",
+        f'<div style="max-width:380px">{compound.to_html(id_prefix="w1-")}</div>',
+        aside=(
+            '<p class="nxv-aside__label">Two details that silently break this</p>'
+            "<ul class=\"nxv-changes\">"
+            "<li><code>startAngle</code> belongs on the mark while the end angle is "
+            "a <code>theta</code> encoding with <code>scale: null</code>. Setting "
+            "both as mark properties validates, compiles, and draws nothing.</li>"
+            "<li><code>autosize: none</code>. The default re-fits the view around "
+            "the marks, which shifts explicitly positioned arcs off centre.</li>"
+            "</ul>"
+        ),
+    ))
+
+    # 2 — the grouped widget.
+    talent = talent_acquisition_widget()
+    sections.append(_step(
+        2,
+        "A grouped widget",
+        "A titled panel holding a hero funnel beside its conversion figures, then "
+        "two half-width panels below. Groups give a widget internal structure, so "
+        "it is not one flat grid of equal cards.",
+        talent.to_html(id_prefix="w2-"),
+        aside=_widget_structure(talent),
+    ))
+
+    # 3 — placement as operations.
+    edited = talent
+    for index, (instruction, ops) in enumerate(WIDGET_EDITS):
+        result = apply_widget_ops(edited, ops)
+        edited = result.widget
+        changes = "".join(f"<li><code>{escape(c)}</code></li>" for c in result.describe()[:6])
+        failures = "".join(
+            f'<li class="nxv-warn">{escape(name)}: {escape(reason)}</li>'
+            for name, reason in result.failed
+        )
+        sections.append(_step(
+            3 + index,
+            f"“{instruction}”",
+            "Placement is edited the same way a chart is: operations in, a diff "
+            "out, and an inverse patch for free.",
+            edited.to_html(id_prefix=f"w{3 + index}-"),
+            aside=(
+                '<p class="nxv-aside__label">Operations</p>'
+                f'<pre class="nxv-code">{escape(json.dumps(ops, indent=2))}</pre>'
+                '<p class="nxv-aside__label">What changed</p>'
+                f'<ul class="nxv-changes">{changes or "<li>(no change)</li>"}{failures}</ul>'
+            ),
+        ))
+
+    # 4 — the other way of combining: one spec.
+    combined = concat(
+        [sourcing_donut(), time_to_hire()],
+        direction="horizontal",
+        title="Sourcing and speed",
+        subtitle="One spec, not two tiles",
+    )
+    sections.append(_step(
+        3 + len(WIDGET_EDITS),
+        "The other way: one spec",
+        "When everything being combined is a Vega view, <code>concat</code> gives "
+        "a single spec instead — one render, one PNG export, and the option of "
+        "shared scales so panels can be read against each other. It cannot hold a "
+        "KPI tile or a rich table, which is exactly when a widget is needed.",
+        render_card(title="", body=render_chart_mount(combined, "widget-concat")),
+        aside=(
+            '<p class="nxv-aside__label">Shared data hoisted to the root</p>'
+            f'<pre class="nxv-code">{escape(json.dumps(sorted(combined.raw), indent=2))}</pre>'
+        ),
+    ))
+
+    return _page(
+        title="nexcraftviz — combining charts",
+        lede=(
+            "Two ways to put several charts together, and why both exist. Every "
+            "panel below is generated by the package."
+        ),
+        body="\n".join(sections),
+        nav_active="widgets",
+    )
+
+
+def _widget_structure(widget_obj) -> str:
+    """The widget's own structure, as a small tree."""
+    from nexcraftviz.compose.widget import Group
+
+    lines = []
+    for node in widget_obj.nodes:
+        if isinstance(node, Group):
+            lines.append(f"<li><code>{escape(node.id)}</code> · group · {escape(node.span)}<ul>")
+            for child in node.tiles:
+                lines.append(
+                    f"<li><code>{escape(child.id)}</code> · "
+                    f"{escape(child.family)} · {escape(child.span)}</li>"
+                )
+            lines.append("</ul></li>")
+        else:
+            lines.append(
+                f"<li><code>{escape(node.id)}</code> · "
+                f"{escape(node.family)} · {escape(node.span)}</li>"
+            )
+    counts = ", ".join(f"{n} {f}" for f, n in sorted(widget_obj.family_counts().items()))
+    return (
+        '<p class="nxv-aside__label">Structure</p>'
+        f'<ul class="nxv-changes">{"".join(lines)}</ul>'
+        f'<p class="nxv-aside__label">Families</p><p class="nxv-step__note">{escape(counts)}</p>'
+    )
+
+
+# ---------------------------------------------------------------------------
 # the reference renderer
 # ---------------------------------------------------------------------------
 
@@ -475,6 +642,7 @@ def _page(*, title: str, lede: str, body: str, nav_active: str) -> str:
     links = (
         ("index", "index.html", "Reference renderer"),
         ("usecase", "usecase.html", "Walkthrough"),
+        ("widgets", "widgets.html", "Combining charts"),
         ("gallery", "gallery.html", "Corpus gallery"),
     )
     nav = "".join(
@@ -529,6 +697,7 @@ def write(out_dir: str | Path, *, limit: int | None = None) -> list[Path]:
     written = [
         _write(target / "index.html", build_reference()),
         _write(target / "usecase.html", build_use_case()),
+        _write(target / "widgets.html", build_widgets()),
         _write(target / "gallery.html", build_gallery(limit)),
         _write(target / "playground.css", _playground_css()),
         _write(target / "playground.js", _playground_js()),
