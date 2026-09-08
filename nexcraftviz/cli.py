@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -77,6 +78,17 @@ def main(argv: list[str] | None = None) -> int:
     p_serve = sub.add_parser("serve", help="Run the HTTP API and serve the embed.")
     p_serve.add_argument("--host", default="127.0.0.1")
     p_serve.add_argument("--port", type=int, default=8180)
+    p_serve.add_argument("--model", default="", help="Override OPENAI_MODEL.")
+    p_serve.add_argument(
+        "--no-model",
+        action="store_true",
+        help="Start without a provider even if one is configured (propose/commit only).",
+    )
+
+    p_eval = sub.add_parser("eval", help="Run the prompt evals against a real model.")
+    p_eval.add_argument("--skill", default="", help="Only this skill.")
+    p_eval.add_argument("--model", default="", help="Override OPENAI_MODEL.")
+    p_eval.add_argument("--json", action="store_true")
 
     sub.add_parser("mcp", help="Run the MCP server over stdio.")
 
@@ -140,6 +152,8 @@ def _dispatch(args: argparse.Namespace) -> int:
         return _cmd_gallery(args)
     if args.command == "serve":
         return _cmd_serve(args)
+    if args.command == "eval":
+        return _cmd_eval(args)
     if args.command == "mcp":
         return _cmd_mcp(args)
     if args.command == "tools":
@@ -307,12 +321,33 @@ def _cmd_serve(args: argparse.Namespace) -> int:
         return 3
 
     from nexcraftviz.app.api import create_app
+    from nexcraftviz.integrations.providers import DEFAULT_OPENAI_MODEL, default_runner
+
+    llm = None if args.no_model else default_runner(model=args.model or None)
+    model = args.model or os.getenv("OPENAI_MODEL", "") or DEFAULT_OPENAI_MODEL
 
     print(f"nexcraftviz on http://{args.host}:{args.port}")
     print(f"  embed:  http://{args.host}:{args.port}/embed/nexcraftviz.js")
     print(f"  tools:  http://{args.host}:{args.port}/v1/tools")
-    uvicorn.run(create_app(), host=args.host, port=args.port, log_level="warning")
+    if llm is None:
+        print("  model:  none — /propose and /commit work; /turn returns 503")
+    else:
+        print(f"  model:  {model}")
+    uvicorn.run(create_app(llm=llm), host=args.host, port=args.port, log_level="warning")
     return 0
+
+
+def _cmd_eval(args: argparse.Namespace) -> int:
+    from nexcraftviz.evals.runner import main as eval_main
+
+    argv = []
+    if args.skill:
+        argv += ["--skill", args.skill]
+    if args.model:
+        argv += ["--model", args.model]
+    if args.json:
+        argv += ["--json"]
+    return eval_main(argv)
 
 
 def _cmd_mcp(args: argparse.Namespace) -> int:

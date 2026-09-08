@@ -1,6 +1,6 @@
 PY := ./.venv/bin/python
 
-.PHONY: help venv test lint fmt typecheck check corpus clean
+.PHONY: help venv test lint fmt typecheck check corpus serve eval-live skill-reference clean
 
 help:
 	@echo "venv       create .venv and install the package with dev+render extras"
@@ -11,6 +11,7 @@ help:
 	@echo "check      lint + test (what CI runs)"
 	@echo "corpus     report corpus coverage and validation status"
 	@echo "serve      run the HTTP API and serve the embed"
+	@echo "eval-live  run the prompt evals against a real model (needs a key)"
 	@echo "skill-reference  regenerate the Claude Code skill's operation reference"
 
 venv:
@@ -37,6 +38,11 @@ corpus:
 
 serve:
 	$(PY) -m nexcraftviz.cli serve
+
+# Live prompt evals. Costs money and needs OPENAI_API_KEY; `make check` stays
+# offline and free on purpose.
+eval-live:
+	NEXCRAFTVIZ_LIVE_EVAL=1 $(PY) -m nexcraftviz.cli eval
 
 skill-reference:
 	$(PY) scripts/build_skill_reference.py

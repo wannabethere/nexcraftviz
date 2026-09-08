@@ -195,6 +195,58 @@ picks up your page's `--nxv-*` tokens, which an iframe cannot do.
 nexcraftviz serve      # API + embed on :8180
 ```
 
+## Models and testing
+
+The core imports no provider SDK and reads no API key — there is a test
+asserting that. A host passes its own runner, and the signature deliberately
+matches genieml's: `(system, user, schema) -> (payload, meta)`.
+
+When nexcraftviz owns the model, configuration is genieml's, so there is
+nothing new to set:
+
+| | |
+|---|---|
+| `OPENAI_API_KEY` | the key |
+| `OPENAI_MODEL` | model id, default `gpt-5-mini` |
+
+```bash
+pip install 'nexcraftviz[openai]'
+nexcraftviz serve                    # picks up a key if one is set, says so if not
+```
+
+Two provider details worth knowing, both pinned by tests. `gpt-5*` and the
+`o*` families **reject a custom temperature** — sending one is a hard 400, not
+a warning. And OpenAI strict mode requires every property in `required`, which
+Pydantic's optional fields violate; `integrations/strict_schema.py` rewrites the
+schema (optional → nullable) and strips the nulls that come back, since Pydantic
+rejects `None` for a field with a default.
+
+### What the tests cover, and what they don't
+
+`make check` runs 794 tests offline and free — no model, no network. That
+covers all the *mechanics*: prompt assembly, schema generation, op parsing,
+application, validation, repair, undo, rendering.
+
+It does **not** measure whether the prompts are any good. That needs a real
+model:
+
+```bash
+make eval-live      # needs OPENAI_API_KEY; costs money
+```
+
+The eval cases are in `nexcraftviz/evals/cases.py`, scored on the *operation
+sequence* rather than the resulting JSON — two specs can differ in whitespace
+and be identical, two op lists that differ are different decisions. The cases
+that matter most:
+
+- **`missing-column`** — asked to break down by a column that does not exist,
+  the model must refuse rather than substitute one that does.
+- **`generate-quarter-labels`** — `"2025-Q1"` must not be encoded as `temporal`.
+  This is graded on the model's *raw* output, because tier-2 repair silently
+  fixes it and would otherwise mask the prompt failure.
+- **`place-widen`** — widening one tile must narrow its neighbour, or the row
+  wraps.
+
 ## Playground
 
 ```bash
