@@ -1,0 +1,56 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "nexcraftviz"
+version = "0.1.0"
+description = "Agentic Vega-Lite charting — spec algebra, themes, narration, and BI export"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Apache-2.0" }
+authors = [{ name = "nexcraftviz contributors" }]
+keywords = ["vega-lite", "charts", "visualization", "llm", "agent", "langchain"]
+dependencies = [
+    "pydantic>=2.6.0",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+# Tier-3 validation + server-side rendering. Kept optional so the spec algebra
+# stays importable in minimal environments (tiers 1-2 need no third-party deps).
+render = [
+    "vl-convert-python>=1.6.0",
+    "jsonschema>=4.21.0",
+]
+data = ["duckdb>=0.10.0"]
+langchain = ["langchain-core>=0.3.0"]
+app = ["fastapi>=0.110.0", "uvicorn>=0.29.0"]
+retrieval = ["qdrant-client>=1.9.0", "openai>=1.40.0"]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "ruff>=0.4",
+    "mypy>=1.9",
+]
+
+[project.scripts]
+nexcraftviz = "nexcraftviz.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["nexcraftviz"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.mypy]
+python_version = "3.11"
+warn_unused_ignores = true
