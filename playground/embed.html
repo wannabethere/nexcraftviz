@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>nexcraftviz — embedding</title>
+
+<!-- The host page's theme tokens. Custom properties inherit through a shadow
+     root, so the widget below picks these up without knowing anything about
+     them — which an iframe could not do. -->
+<link rel="stylesheet" href="../assets/nexcraftviz.css">
+<link rel="stylesheet" href="playground.css">
+
+<style>
+  .demo { display: grid; gap: calc(var(--nxv-space) * 3); grid-template-columns: 1fr 1fr; }
+  @media (max-width: 1000px) { .demo { grid-template-columns: 1fr; } }
+  nexcraftviz-chat { --nxv-embed-height: 560px; }
+  .brand { --nxv-accent: #7c3aed; --nxv-radius-md: 14px; }
+  .status { font-size: var(--nxv-size-sm); margin: 0 0 var(--nxv-space); }
+  .status.bad { color: var(--nxv-negative); }
+  .status.good { color: var(--nxv-positive); }
+</style>
+</head>
+<body>
+
+<header class="nxv-page__header">
+  <div>
+    <h1>nexcraftviz — embedding</h1>
+    <p class="nxv-lede">
+      The same conversation, dropped into a page as one custom element. The left
+      widget runs in <strong>driven</strong> mode — this page owns the "model" —
+      and the right one is styled purely by the host's CSS tokens, to show that
+      theming crosses the shadow boundary.
+    </p>
+  </div>
+  <div class="nxv-controls">
+    <nav class="nxv-nav">
+      <a href="index.html">Reference renderer</a>
+      <a href="usecase.html">Walkthrough</a>
+      <a href="widgets.html">Combining charts</a>
+      <a href="embed.html" class="is-active">Embedding</a>
+      <a href="gallery.html">Corpus gallery</a>
+    </nav>
+    <div class="nxv-themes" id="themes"></div>
+  </div>
+</header>
+
+<main>
+  <p class="status" id="status">Checking for the API…</p>
+
+  <section class="nxv-step">
+    <h2 class="nxv-step__title"><span class="nxv-step__num">1</span>One element</h2>
+    <p class="nxv-step__note">
+      <code>&lt;nexcraftviz-chat endpoint="…"&gt;</code>. Try
+      <em>sort descending</em>, <em>keep the top 3</em>, <em>add a target line at
+      120</em>, <em>switch to dark mode</em>, then the undo arrow.
+    </p>
+    <div class="demo">
+      <div>
+        <nexcraftviz-chat id="driven" mode="driven" endpoint="http://127.0.0.1:8180"
+                          placeholder="Try: sort descending"></nexcraftviz-chat>
+      </div>
+      <div class="brand">
+        <p class="nxv-aside__label">Host-themed (purple accent, rounder corners)</p>
+        <nexcraftviz-chat id="branded" mode="driven" endpoint="http://127.0.0.1:8180"
+                          placeholder="Same component, host's tokens"></nexcraftviz-chat>
+      </div>
+    </div>
+  </section>
+
+  <section class="nxv-step">
+    <h2 class="nxv-step__title"><span class="nxv-step__num">2</span>What the host wires up</h2>
+    <p class="nxv-step__note">
+      In driven mode the component asks the server what to do — a prompt and an
+      output schema, with no model called anywhere — hands it to you, and
+      commits whatever you return. That is the whole integration.
+    </p>
+    <pre class="nxv-code">const el = document.querySelector('nexcraftviz-chat');
+
+el.onPropose = async ({ prompt, skill }) =&gt; {
+  // prompt.system, prompt.user, prompt.output_schema
+  return await myModel(prompt);        // your model, your key, your logs
+};</pre>
+    <p class="nxv-step__note">
+      This page stands in for <code>myModel</code> with a tiny rule-based stub, so
+      the demo runs with no API key. Watch the log: the operations it returns are
+      the same ones a real model would emit, and the appliers do not care which.
+    </p>
+    <div class="nxv-aside">
+      <p class="nxv-aside__label">Last exchange</p>
+      <pre class="nxv-code" id="exchange">(nothing yet)</pre>
+    </div>
+  </section>
+</main>
+
+<script type="module">
+import '../nexcraftviz/embed/nexcraftviz.js';
+
+const ENDPOINT = 'http://127.0.0.1:8180';
+const ROWS = [
+  { region: 'West',  revenue: 128, orders: 41 },
+  { region: 'East',  revenue: 96,  orders: 33 },
+  { region: 'North', revenue: 152, orders: 48 },
+  { region: 'South', revenue: 71,  orders: 22 },
+  { region: 'Central', revenue: 114, orders: 37 },
+];
+const CHART = {
+  $schema: 'https://vega.github.io/schema/vega-lite/v5.json',
+  data: { values: ROWS },
+  width: 'container', height: 220,
+  mark: 'bar',
+  encoding: {
+    x: { field: 'region', type: 'nominal', axis: { title: null } },
+    y: { field: 'revenue', type: 'quantitative', axis: { title: 'Revenue' } },
+  },
+};
+
+/**
+ * Stands in for a real model, so the demo needs no API key.
+ *
+ * A model would read `prompt.system` (the operating rules) and `prompt.user`
+ * (the spec and the column profile) and emit operations against
+ * `prompt.output_schema`. This reads the instruction with a few regexes and
+ * emits the same shape — which is the point: the appliers cannot tell the
+ * difference, and everything downstream is identical.
+ */
+function stubModel({ skill, prompt }) {
+  const text = JSON.parse(prompt.user).instruction || '';
+  const said = text.toLowerCase();
+  const ops = [];
+
+  if (skill === 'viz.edit') {
+    if (/\b(sort|rank|order|biggest|highest)\b/.test(said)) {
+      ops.push({ op: 'sort_by', channel: 'x', by: 'revenue',
+                 order: /ascend|worst|lowest|smallest/.test(said) ? 'ascending' : 'descending' });
+    }
+    const topN = said.match(/\btop\s+(\d+)|\bkeep\s+(?:the\s+)?(?:top\s+)?(\d+)/);
+    if (topN) ops.push({ op: 'limit_top_n', n: Number(topN[1] || topN[2]), by: 'revenue' });
+
+    const target = said.match(/\b(?:target|threshold|line)\D{0,12}(\d+)/);
+    if (target) {
+      ops.push({ op: 'add_reference_line', value: Number(target[1]), axis: 'y',
+                 label: `target ${target[1]}` });
+    }
+    if (/\bline chart\b|\bas a line\b/.test(said)) ops.push({ op: 'set_mark', mark: 'line' });
+    if (/\barea\b/.test(said)) ops.push({ op: 'set_mark', mark: 'area' });
+    if (/\bcolou?r by\b/.test(said)) {
+      ops.push({ op: 'set_color_field', field: 'region', type: 'nominal' });
+    }
+    if (/\btitle\b/.test(said)) ops.push({ op: 'set_title', text: 'Revenue by region' });
+
+    return {
+      ops,
+      reasoning: ops.length
+        ? `Applied ${ops.length} change${ops.length > 1 ? 's' : ''}: ${ops.map(o => o.op).join(', ')}.`
+        : 'I did not recognise that instruction — a real model would do better here.',
+      needs_data: '',
+    };
+  }
+
+  if (skill === 'viz.narrate') {
+    return {
+      summary: 'North leads on revenue at 152, with South well behind at 71 — a spread of more than 2×.',
+      headline: 'North leads, South lags',
+      points: [{ text: 'South is 53% below North', kind: 'outlier', fields: ['region', 'revenue'] }],
+    };
+  }
+  return { ops: [], reasoning: 'The stub does not handle this skill.' };
+}
+
+const exchange = document.getElementById('exchange');
+const status = document.getElementById('status');
+
+async function wire(el) {
+  el.onPropose = async (proposal) => {
+    const output = stubModel(proposal);
+    exchange.textContent = JSON.stringify(
+      { skill: proposal.skill, routed_because: proposal.route.reason, model_output: output },
+      null, 2);
+    return output;
+  };
+  await el.start({ rows: ROWS, document: CHART });
+}
+
+// Fail loudly and usefully when the API is not running — a silent empty widget
+// is the worst possible outcome for a demo.
+try {
+  const health = await fetch(`${ENDPOINT}/v1/health`).then(r => r.json());
+  status.textContent = `API v${health.version} · hosted mode ${health.hosted_mode ? 'on' : 'off'} · this page drives the model itself`;
+  status.className = 'status good';
+  for (const el of document.querySelectorAll('nexcraftviz-chat')) await wire(el);
+} catch (error) {
+  status.className = 'status bad';
+  status.textContent = 'The API is not running. Start it with:  nexcraftviz serve';
+}
+
+// Theme toggle, shared with the other playground pages.
+const THEMES = ['nexcraftviz-light', 'nexcraftviz-dark'];
+const bar = document.getElementById('themes');
+THEMES.forEach((name, index) => {
+  const button = document.createElement('button');
+  button.textContent = name.replace('nexcraftviz-', '');
+  button.setAttribute('aria-pressed', String(index === 0));
+  button.onclick = () => {
+    document.documentElement.setAttribute('data-nxv-theme', name.endsWith('dark') ? 'dark' : 'light');
+    [...bar.children].forEach((b, i) => b.setAttribute('aria-pressed', String(i === index)));
+  };
+  bar.appendChild(button);
+});
+document.documentElement.setAttribute('data-nxv-theme', 'light');
+</script>
+</body>
+</html>

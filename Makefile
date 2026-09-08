@@ -10,6 +10,8 @@ help:
 	@echo "typecheck  mypy over the package"
 	@echo "check      lint + test (what CI runs)"
 	@echo "corpus     report corpus coverage and validation status"
+	@echo "serve      run the HTTP API and serve the embed"
+	@echo "skill-reference  regenerate the Claude Code skill's operation reference"
 
 venv:
 	python3 -m venv .venv
@@ -32,6 +34,12 @@ check: lint test
 
 corpus:
 	$(PY) -m nexcraftviz.corpus.report
+
+serve:
+	$(PY) -m nexcraftviz.cli serve
+
+skill-reference:
+	$(PY) scripts/build_skill_reference.py
 
 clean:
 	rm -rf .pytest_cache .ruff_cache .mypy_cache dist build

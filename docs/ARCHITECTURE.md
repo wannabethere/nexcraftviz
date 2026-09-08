@@ -218,6 +218,71 @@ specificity, so an element carrying both silently loses every span; and
 rendering one widget twice on a page needs an `id_prefix`, or the duplicate DOM
 ids mean only the first copy ever gets a chart.
 
+### `skills` — the portable contract
+
+Every skill splits into three pure phases, and keeping them apart is what lets
+one implementation serve an agent that already owns a model *and* a hosted
+service that owns its own:
+
+1. `render_prompt` — builds the system text, user payload and output schema.
+   No model, no network.
+2. `parse` — raw model output → a typed result.
+3. `apply` — does the work the model only *decided*: applies the operations,
+   builds the spec, assembles the widget.
+
+`run` chains all three when a runner is supplied. An MCP client, a Claude Code
+skill and a tool-calling loop all use phases 1 and 3 and bring their own middle.
+Prompts live in `nexcraftviz/prompts/*.txt` with a manifest, overridable via
+`NEXCRAFTVIZ_PROMPT_DIR` — never as string literals.
+
+Two skills need no model at all (`viz.recommend`, `viz.theme`), which is the
+point: a host that calls them pays nothing and gets the same answer every time.
+
+### `agent` — the conversation, in two modes
+
+```
+propose(message) → prompt + schema     # host runs its own model
+commit(proposal, output) → turn        # deterministic
+turn(message, llm=...)                 # hosted: both halves
+```
+
+`commit` *is* the second half of `turn`, so neither path is second-class and
+there is no logic only one of them exercises. A test asserts both reach the
+same document hash.
+
+Routing is rules, not a model call — free, instant, and the one decision where
+being wrong costs a single turn. `has_widget`/`has_chart` matter more than the
+wording: an edit instruction with nothing to edit is a request to create.
+
+Undo is free: skills return inverse patches, so the session keeps a stack of
+those rather than snapshotting documents.
+
+### `integrations` — three front doors, one implementation
+
+The design decision worth knowing: **in agent mode the agent is the model.**
+There is deliberately no `viz_generate` tool — asking a model to call a tool
+that calls a model is a round trip and a second, worse prompt. Agents get the
+deterministic capabilities, the appliers, and `viz_guidance`, which hands back
+the *same* operating rules the hosted prompts use so the agent reasons in the
+vocabulary the appliers accept.
+
+`integrations/tools.py` is the single source; `mcp_server.py` is a thin adapter
+over it, and `skills/nexcraftviz/SKILL.md` (plus a generated operations
+reference) is the Claude Code package. Nothing imports a provider SDK.
+
+### `app` and `embed`
+
+`app/api.py` exposes both modes; `/turn` answers 503 with an actionable message
+when no provider is configured rather than pretending. `embed/nexcraftviz.js`
+is a custom element plus a plain JS client. Shadow DOM for isolation, but CSS
+custom properties inherit through it — so the widget picks up the host page's
+`--nxv-*` tokens, which an iframe could not do.
+
+One non-obvious constraint: a widget's markup is rendered server-side, and its
+chart specs travel *alongside* it in `state.specs` rather than only in the
+inline `<script>` the markup carries, because scripts inserted via `innerHTML`
+never execute.
+
 ### `examples`
 
 Worked reproductions of two real dashboard designs, kept as code so they stay

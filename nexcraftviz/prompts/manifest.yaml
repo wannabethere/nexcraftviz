@@ -1,0 +1,20 @@
+# Prompts are data, not string literals in Python: they can be versioned,
+# diffed, reviewed and overridden (NEXCRAFTVIZ_PROMPT_DIR) without a release.
+version: 1
+prompts:
+  viz.edit:
+    file: viz.edit.txt
+    version: 1
+    output: OpList
+  viz.place:
+    file: viz.place.txt
+    version: 1
+    output: WidgetOpList
+  viz.generate:
+    file: viz.generate.txt
+    version: 1
+    output: GenerateOut
+  viz.narrate:
+    file: viz.narrate.txt
+    version: 1
+    output: NarrateOut

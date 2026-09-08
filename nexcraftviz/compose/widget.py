@@ -203,6 +203,19 @@ class Widget(BaseModel):
     def chart_tiles(self) -> list[Tile]:
         return [t for t in self.tiles if t.family in ("vega-lite", "vega")]
 
+    def chart_specs(self, *, id_prefix: str = "") -> dict[str, dict[str, Any]]:
+        """Mount id → spec, for every chart tile.
+
+        Rendered HTML carries the specs in an inline ``<script>``, which is
+        fine for a generated page and useless to a client that injects the
+        markup with ``innerHTML`` — scripts inserted that way never run. So the
+        specs are also available directly.
+        """
+        return {
+            f"{id_prefix}{t.id}": t.spec.raw
+            for t in self.chart_tiles()
+        }
+
     # -- rendering ----------------------------------------------------------
 
     def to_html(self, *, max_table_rows: int = 8, id_prefix: str = "") -> str:

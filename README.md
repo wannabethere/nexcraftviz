@@ -40,6 +40,10 @@ in the loop, and undoable — every edit returns its own inverse patch.
 | `theme` | One token source → a Vega config *and* a CSS bundle |
 | `recommend.rules` | Deterministic chart ranking from the profile |
 | `compose` | Two ways to combine charts, plus placement operations with undo |
+| `skills` | The portable contract: render_prompt / parse / apply, prompts as data |
+| `agent` | The conversation — routing, sessions, undo, in either execution mode |
+| `integrations` | Agent tools, an MCP server, and a Claude Code skill package |
+| `app` + `embed` | HTTP API and a `<nexcraftviz-chat>` custom element |
 
 Skills, corpus retrieval, composition and BI export land in subsequent
 milestones; see `docs/`.
@@ -140,6 +144,57 @@ result.describe()   # what moved
 result.inverse      # patch that puts it back
 ```
 
+## Using it from another agent
+
+**In agent mode the agent is the model.** There is deliberately no
+"generate a chart" tool — asking a model to call a tool that calls a model is a
+round trip and a second, worse prompt. An agent gets the deterministic
+capabilities, the appliers, and the guidance:
+
+```
+viz_profile    → columns and their roles (measure / dimension / time / …)
+viz_recommend  → chart types ranked by shape rules, with reasons
+viz_guidance   → the operation vocabulary and the rules for using it
+viz_apply_ops  → your operations, applied, validated, repaired
+viz_render     → proof it actually draws
+```
+
+Three front doors, one implementation:
+
+```bash
+nexcraftviz tools --style openai     # or anthropic, or mcp
+nexcraftviz mcp                      # MCP server over stdio
+```
+
+For Claude Code, `skills/nexcraftviz/` is a skill package and
+`.claude-plugin/plugin.json` registers both it and the MCP server.
+
+## Embedding the conversation
+
+One custom element, in either mode:
+
+```html
+<script type="module" src="https://your-host/embed/nexcraftviz.js"></script>
+<nexcraftviz-chat endpoint="https://your-host"></nexcraftviz-chat>
+```
+
+That is **hosted** mode — the server owns the model. In **driven** mode your
+tool owns it, and nexcraftviz never needs a provider key:
+
+```js
+el.setAttribute('mode', 'driven');
+el.onPropose = async ({ prompt, skill }) => myModel(prompt);
+```
+
+`propose` returns a prompt and an output schema with no model called anywhere;
+`commit` applies whatever you return. It is a custom element rather than an
+iframe because CSS custom properties inherit through a shadow root — the widget
+picks up your page's `--nxv-*` tokens, which an iframe cannot do.
+
+```bash
+nexcraftviz serve      # API + embed on :8180
+```
+
 ## Playground
 
 ```bash
@@ -156,6 +211,8 @@ drift from what the code does:
   applied as operations with the resulting diff shown beside each chart.
 - **`widgets.html`** — combining charts: a compound tile, a grouped widget,
   the same widget edited by placement operations, and the single-spec form.
+- **`embed.html`** — the widget embedded twice, in driven mode, one of them
+  restyled entirely by host CSS tokens.
 - **`gallery.html`** — all 200 corpus pairs, table first and chart second.
 
 ## Install

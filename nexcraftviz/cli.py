@@ -74,6 +74,16 @@ def main(argv: list[str] | None = None) -> int:
     p_gallery.add_argument("--out", default="playground", help="Output directory.")
     p_gallery.add_argument("--limit", type=int, help="Only this many corpus pairs.")
 
+    p_serve = sub.add_parser("serve", help="Run the HTTP API and serve the embed.")
+    p_serve.add_argument("--host", default="127.0.0.1")
+    p_serve.add_argument("--port", type=int, default=8180)
+
+    sub.add_parser("mcp", help="Run the MCP server over stdio.")
+
+    p_tools = sub.add_parser("tools", help="Print the agent tool schemas.")
+    p_tools.add_argument("--style", default="openai", choices=("openai", "anthropic", "mcp"))
+    p_tools.add_argument("--ops", action="store_true", help="Print the operation schemas too.")
+
     p_theme = sub.add_parser("theme", help="List, inspect, audit and apply themes.")
     theme_sub = p_theme.add_subparsers(dest="theme_command", required=True)
 
@@ -128,6 +138,12 @@ def _dispatch(args: argparse.Namespace) -> int:
         return _cmd_recommend(args)
     if args.command == "gallery":
         return _cmd_gallery(args)
+    if args.command == "serve":
+        return _cmd_serve(args)
+    if args.command == "mcp":
+        return _cmd_mcp(args)
+    if args.command == "tools":
+        return _cmd_tools(args)
     raise ValueError(f"unknown command {args.command!r}")
 
 
@@ -275,6 +291,43 @@ def _cmd_gallery(args: argparse.Namespace) -> int:
 
     for path in write(args.out, limit=args.limit):
         print(f"wrote {path} ({path.stat().st_size} bytes)")
+    return 0
+
+
+def _cmd_serve(args: argparse.Namespace) -> int:
+    """Run the API.
+
+    Starts without a model configured: propose/commit work fully, and /turn
+    answers 503 with an actionable message rather than pretending.
+    """
+    try:
+        import uvicorn
+    except ImportError:
+        print("serving needs the `app` extra: pip install 'nexcraftviz[app]'", file=sys.stderr)
+        return 3
+
+    from nexcraftviz.app.api import create_app
+
+    print(f"nexcraftviz on http://{args.host}:{args.port}")
+    print(f"  embed:  http://{args.host}:{args.port}/embed/nexcraftviz.js")
+    print(f"  tools:  http://{args.host}:{args.port}/v1/tools")
+    uvicorn.run(create_app(), host=args.host, port=args.port, log_level="warning")
+    return 0
+
+
+def _cmd_mcp(args: argparse.Namespace) -> int:
+    from nexcraftviz.integrations.mcp_server import main as mcp_main
+
+    return mcp_main()
+
+
+def _cmd_tools(args: argparse.Namespace) -> int:
+    from nexcraftviz.integrations.tools import op_schemas, tool_schemas
+
+    payload: dict[str, Any] = {"tools": tool_schemas(args.style)}
+    if args.ops:
+        payload["operations"] = op_schemas()
+    print(json.dumps(payload, indent=2))
     return 0
 
 
