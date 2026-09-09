@@ -20,7 +20,12 @@ _RULES: list[tuple[str, tuple[str, ...], str]] = [
     (
         "viz.theme",
         (r"\b(dark|light)\s*(mode|theme)\b", r"\btheme\b", r"\bpower\s*bi\b",
-         r"\bbrand(ing)?\b", r"\bcolou?r\s*scheme\b"),
+         r"\bbrand(ing)?\b", r"\bcolou?r\s*scheme\b",
+         # "make it dark" is the phrasing people actually use, and it names no
+         # theme word at all. Anchored to a verb so "dark blue bars" — which is
+         # an edit to one mark, not a theme — does not match.
+         r"\b(make|switch|set|turn|put)\b[^.]{0,14}\b(dark|light)\b",
+         r"\bdarker\b", r"\blighter\b"),
         "names a theme",
     ),
     (
@@ -42,6 +47,20 @@ _RULES: list[tuple[str, tuple[str, ...], str]] = [
         (r"^\s*(show|plot|chart|graph|draw|visuali[sz]e)\b", r"\bnew chart\b",
          r"\bstart (over|again)\b"),
         "asks for a new chart",
+    ),
+    (
+        # Last, and deliberately explicit rather than left to the fallthrough
+        # below. The default lands on viz.edit either way, but a *recognised*
+        # edit and an unrecognised message are different facts — the manager
+        # pays a model call for the second and not the first.
+        "viz.edit",
+        (r"\b(sort|rank|order)\b", r"\btop \d+\b", r"\bbottom \d+\b",
+         r"\bfilter\b", r"\bexclude\b", r"\bonly show\b", r"\bremove\b",
+         r"\bcolou?r by\b", r"\bbreak ?down by\b", r"\bstack\b",
+         r"\bgroup by\b", r"\baxis\b", r"\blog scale\b", r"\blegend\b",
+         r"\blabel", r"\btooltip\b", r"\btarget line\b", r"\bthreshold\b",
+         r"\baggregate\b", r"\baverage\b", r"\bas a (bar|line|pie|area)\b"),
+        "asks for a change to the chart itself",
     ),
 ]
 
@@ -79,6 +98,15 @@ def route(message: str, *, has_chart: bool, has_widget: bool) -> Route:
     for skill, patterns, reason in _RULES:
         if not any(re.search(pattern, text) for pattern in patterns):
             continue
+        if skill == "viz.generate" and has_chart and _EDIT_OVERRIDE.search(text):
+            # "show the top 10" opens with a create verb but names an edit
+            # operation. With a chart already on screen it is a change to that
+            # chart, not a request to start again — and starting again would
+            # throw away everything the user had already adjusted.
+            return Route(
+                "viz.edit",
+                "opens like a new chart but asks for a change to the current one",
+            )
         if skill == "viz.place":
             if not has_widget:
                 return Route(

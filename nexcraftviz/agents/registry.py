@@ -27,12 +27,12 @@ if TYPE_CHECKING:  # pragma: no cover
     pass
 
 Role = Literal[
-    "planner", "generator", "evaluator", "critic", "deliverer",
+    "manager", "planner", "generator", "evaluator", "critic", "deliverer",
     "editor", "placer", "narrator",
 ]
 
 ROLES: tuple[Role, ...] = (
-    "planner", "generator", "evaluator", "critic", "deliverer",
+    "manager", "planner", "generator", "evaluator", "critic", "deliverer",
     "editor", "placer", "narrator",
 )
 

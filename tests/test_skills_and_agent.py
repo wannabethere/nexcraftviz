@@ -196,6 +196,9 @@ def _inputs_for(name: str) -> dict:
         return {"question": "revenue by region", "rows": ROWS}
     if name == "viz.critique":
         return {"question": "revenue by region", "spec": CHART, "rows": ROWS}
+    if name == "viz.manage":
+        return {"instruction": "make it dark and sort descending", "spec": CHART,
+                "rows": ROWS}
     if name == "viz.edit":
         return {"instruction": "sort descending", "spec": CHART, "rows": ROWS}
     # No silent fallback: a new skill should fail here rather than be handed an

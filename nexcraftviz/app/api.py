@@ -85,6 +85,38 @@ class CommitIn(BaseModel):
     )
 
 
+class CreateChart(BaseModel):
+    """A first chart, for a host that owns the data and the widget."""
+
+    question: str = Field(
+        description="Composed by the caller from the data. Required — a chart "
+                    "built from a question nobody can see is one nobody can check.",
+    )
+    rows: list[dict[str, Any]] = Field(default_factory=list)
+    theme: str = ""
+    language: str = "English"
+
+
+class AnnotateChart(BaseModel):
+    """One instruction against an existing chart."""
+
+    instruction: str
+    chart_schema: dict[str, Any] | None = None
+    rows: list[dict[str, Any]] = Field(default_factory=list)
+    theme: str = ""
+    language: str = "English"
+    session_id: str = Field(
+        default="", description="Optional — supply one to keep undo across calls."
+    )
+
+
+#: Said the same way wherever a route needs a model and the server has none.
+_NO_MODEL = (
+    "this server has no model configured. Start it with a provider, or use "
+    "/v1/sessions with propose/commit and run your own."
+)
+
+
 def create_app(store: SessionStore | None = None, *, llm: Any = None) -> Any:
     """Build the FastAPI app.
 
@@ -244,6 +276,59 @@ def create_app(store: SessionStore | None = None, *, llm: Any = None) -> Any:
     def redo(session_id: str) -> dict[str, Any]:
         session = _require(session_id)
         return {"redone": session.redo(), "state": session.state()}
+
+    # -- charts ------------------------------------------------------------
+    #
+    # A separate surface from /v1/sessions: a dashboard tile already has a
+    # widget id to key on, so making it mint a session to draw one chart is
+    # ceremony. Stateless unless the caller asks for a session.
+
+    @app.get("/v1/chart/capabilities")
+    def chart_capabilities() -> dict[str, Any]:
+        from nexcraftviz.app.chart_api import capabilities
+
+        return capabilities()
+
+    @app.post("/v1/chart/create")
+    async def chart_create(body: CreateChart) -> dict[str, Any]:
+        from nexcraftviz.app.chart_api import ChartSurfaceError, create_chart
+
+        if llm is None:
+            raise HTTPException(503, _NO_MODEL)
+        try:
+            return await create_chart(
+                question=body.question, rows=body.rows, theme=body.theme,
+                language=body.language, llm=llm,
+            )
+        except ChartSurfaceError as exc:
+            raise HTTPException(422, str(exc)) from exc
+
+    @app.post("/v1/chart/annotate")
+    async def chart_annotate(body: AnnotateChart) -> dict[str, Any]:
+        from nexcraftviz.app.chart_api import ChartSurfaceError, annotate_chart
+
+        session = sessions.get(body.session_id) if body.session_id else None
+        if body.session_id and session is None:
+            raise HTTPException(404, f"no session {body.session_id!r}")
+
+        try:
+            result, used = await annotate_chart(
+                instruction=body.instruction,
+                chart_schema=body.chart_schema,
+                rows=body.rows or (session.rows if session else []),
+                theme=body.theme,
+                language=body.language,
+                llm=llm,
+                session=session,
+            )
+        except ChartSurfaceError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+        if session is not None:
+            result["session_id"] = used.id
+        return result
 
     # -- the embed ---------------------------------------------------------
 

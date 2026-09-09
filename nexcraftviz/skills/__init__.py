@@ -20,6 +20,7 @@ from nexcraftviz.skills.create import (
     ThemeSkill,
 )
 from nexcraftviz.skills.edit import EditSkill, PlaceSkill
+from nexcraftviz.skills.manage import ManageSkill
 from nexcraftviz.skills.plan import CritiqueSkill, PlanSkill
 
 #: Every skill, by name. The basis of the tool schemas, the MCP server and the
@@ -29,6 +30,7 @@ REGISTRY: dict[str, Skill] = {
     for skill in (
         RecommendSkill(),
         PlanSkill(),
+        ManageSkill(),
         GenerateSkill(),
         CritiqueSkill(),
         EditSkill(),
@@ -59,6 +61,7 @@ __all__ = [
     "EditSkill",
     "GenerateSkill",
     "LLMRunner",
+    "ManageSkill",
     "NarrateSkill",
     "Prompt",
     "PlanSkill",

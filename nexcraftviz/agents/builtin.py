@@ -334,6 +334,39 @@ def _tile(spec: Any, rows: list[dict[str, Any]], plan: Any) -> dict[str, Any]:
 # the conversational roles
 # ---------------------------------------------------------------------------
 
+class ManagerAgent(SkillAgent):
+    """Instruction → ordered actions. The role behind an instruction box.
+
+    Not part of the chart pipeline — it sits *in front of* it, deciding whether
+    an instruction wants an edit, a theme change, a narration, a rearrangement,
+    a whole new chart, or an honest refusal.
+    """
+
+    spec = AgentSpec(
+        role="manager",
+        name="builtin.manager",
+        model_tier="fast",
+        skill="viz.manage",
+        summary="Route one instruction to the actions that carry it out, in order.",
+    )
+
+    def build_input(self, ctx: StageContext) -> dict[str, Any]:
+        return {
+            "instruction": ctx.question,
+            "spec": ctx.options.get("spec"),
+            "widget": ctx.options.get("widget"),
+            "rows": ctx.rows,
+            "language": ctx.language,
+        }
+
+    async def run(self, ctx: StageContext) -> Any:
+        result, telemetry = await self.call(ctx)
+        decision = result.value
+        if decision is not None:
+            decision.telemetry = telemetry
+        return decision
+
+
 class EditorAgent(SkillAgent):
     """An edit needs no plan — the chart already exists and the change is named."""
 
@@ -408,7 +441,7 @@ class NarratorAgent(SkillAgent):
 # ---------------------------------------------------------------------------
 
 _BUILTINS: tuple[type, ...] = (
-    PlannerAgent, GeneratorAgent, EvaluatorAgent, CriticAgent,
+    ManagerAgent, PlannerAgent, GeneratorAgent, EvaluatorAgent, CriticAgent,
     DelivererAgent, EditorAgent, PlacerAgent, NarratorAgent,
 )
 
