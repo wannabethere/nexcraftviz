@@ -214,3 +214,52 @@ def test_widgets_page_shows_both_forms_and_the_edits() -> None:
 def test_write_emits_every_asset(tmp_path: Path, name: str) -> None:
     write(tmp_path, limit=5)
     assert (tmp_path / name).stat().st_size > 0
+
+
+# ---------------------------------------------------------------------------
+# the pipeline page
+# ---------------------------------------------------------------------------
+
+def test_pipeline_page_covers_every_progress_pair() -> None:
+    """A pair added to the corpus and not to a domain group must still appear.
+    Vanishing silently is the failure worth guarding."""
+    from nexcraftviz.corpus.loader import seed
+    from nexcraftviz.gallery import build_pipeline
+
+    progress = [p for p in seed().pairs if (p.kinds or {}).get("intent") == "progress"]
+    assert progress, "the corpus should carry progress pairs"
+    html = build_pipeline()
+    assert html.count("nxv-gallery__item") == len(progress)
+    for pair in progress:
+        assert pair.chart_type in html
+
+
+def test_pipeline_page_shows_that_retrieval_finds_each_chart() -> None:
+    """The page claims the corpus selects these types. The claim is computed
+    when the page is built, so a page that renders is a page whose claim holds."""
+    from nexcraftviz.gallery import build_pipeline
+
+    html = build_pipeline()
+    assert "✗" not in html, "a pair's own example question did not retrieve it"
+    assert html.count("✓") >= 8
+
+
+def test_pipeline_charts_size_to_their_card() -> None:
+    """The corpus specs carry a fixed width tuned for a card of their own; two
+    to a row they overflow and the last gantt bar simply vanishes."""
+    from nexcraftviz.gallery import build_pipeline
+
+    html = build_pipeline()
+    assert '\\"width\\": \\"container\\"' in html or '"width": "container"' in html
+
+
+def test_the_pipeline_page_is_written_and_linked() -> None:
+    import tempfile
+    from pathlib import Path
+
+    from nexcraftviz.gallery import write
+
+    with tempfile.TemporaryDirectory() as tmp:
+        written = {p.name for p in write(tmp)}
+        assert "pipeline.html" in written
+        assert 'href="pipeline.html"' in (Path(tmp) / "index.html").read_text()

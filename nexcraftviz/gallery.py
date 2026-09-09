@@ -239,6 +239,146 @@ def build_use_case() -> str:
 # the corpus gallery
 # ---------------------------------------------------------------------------
 
+#: The pipeline pairs, grouped the way someone reads them: by the thing being
+#: tracked, not by chart type. Declared rather than parsed out of the names —
+#: `cumulative_flow_hiring_pipeline` is an employee chart and says nothing about
+#: it, and a mis-grouping would be silent.
+PIPELINE_DOMAINS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
+    (
+        "Sprint progress",
+        "Is the sprint going to land, and where is work piling up?",
+        ("burndown_sprint_remaining", "cumulative_flow_sprint_board"),
+    ),
+    (
+        "Project progress",
+        "What runs when, which dates matter, and will the money last?",
+        ("gantt_project_plan", "milestone_project_checkpoints", "burndown_project_budget"),
+    ),
+    (
+        "Employee",
+        "One person's path — ramping, key dates — and the pipeline they came through.",
+        (
+            "gantt_employee_onboarding_ramp",
+            "milestone_employee_journey",
+            "cumulative_flow_hiring_pipeline",
+        ),
+    ),
+)
+
+
+def build_pipeline() -> str:
+    """The progress charts, grouped by what they track.
+
+    Every card shows the rows, the chart, and — the part that makes this a
+    *corpus* gallery rather than a sample sheet — the `use_when` and
+    `do_not_use_when` clauses that decide when each is the right answer, plus
+    the question that actually retrieves it and the score it earns.
+    """
+    from nexcraftviz.data.profile import profile_rows
+    from nexcraftviz.recommend.precedent import precedents
+
+    by_name = {pair.name: pair for pair in seed().pairs}
+    grouped = {name for _, _, names in PIPELINE_DOMAINS for name in names}
+
+    # Anything with a progress intent that nobody put in a group still belongs
+    # on the page. A pair added later should look out of place, not disappear.
+    ungrouped = tuple(
+        pair.name
+        for pair in seed().pairs
+        if (pair.kinds or {}).get("intent") == "progress" and pair.name not in grouped
+    )
+    domains = list(PIPELINE_DOMAINS)
+    if ungrouped:
+        domains.append(("Not yet grouped", "Added to the corpus, not to this page.", ungrouped))
+
+    sections: list[str] = []
+    total = 0
+    for index, (title, note, names) in enumerate(domains, start=1):
+        cards = []
+        for name in names:
+            pair = by_name.get(name)
+            if pair is None:
+                continue
+            total += 1
+            cards.append(_pipeline_card(pair, total, precedents, profile_rows))
+        if cards:
+            sections.append(
+                _step(index, title, note,
+                      f'<div class="nxv-gallery nxv-gallery--wide">{"".join(cards)}</div>')
+            )
+
+    types = sorted({by_name[n].chart_type for _, _, ns in domains for n in ns if n in by_name})
+    return _page(
+        title="nexcraftviz — pipeline and progress",
+        lede=(
+            f"{total} worked examples across {len(types)} chart types "
+            f"({', '.join(types)}), grouped by what they track. Each card carries "
+            "the conditions that select it and the question that retrieves it — "
+            "the corpus decides the chart type, so these are the evidence it "
+            "decides from."
+        ),
+        body="".join(sections),
+        nav_active="pipeline",
+    )
+
+
+def _pipeline_card(pair: ChartPair, index: int, precedents: Any, profile_rows: Any) -> str:
+    spec = pair.spec()
+    rows = spec.data_values
+    parts: list[str] = []
+
+    # The corpus specs carry a fixed width, tuned for a card of their own.
+    # Three to a row they overflow and clip — the last gantt bar and the last
+    # milestone simply vanish. A display concern of this page, so it is fixed
+    # here rather than in the corpus.
+    if "width" in spec.raw:
+        spec.raw["width"] = "container"
+
+    if rows:
+        parts.append(
+            '<details class="nxv-details"><summary>Source rows '
+            f"({len(rows)})</summary>{render_table(build_table(rows), max_rows=GALLERY_ROWS)}"
+            "</details>"
+        )
+    parts.append(render_chart_mount(spec, f"pipeline-{index}"))
+
+    if pair.insight:
+        parts.append(f'<p class="nxv-overview">{escape(pair.insight)}</p>')
+
+    # What the retrieval actually does with this pair's own first question —
+    # computed here rather than asserted, so a page that renders is a page whose
+    # claim is true.
+    retrieved = ""
+    if pair.example_questions and rows:
+        question = pair.example_questions[0]
+        found = precedents(profile_rows(rows), question=question)
+        if found.best is not None:
+            hit = "✓" if found.best.chart_type == pair.chart_type else "✗"
+            retrieved = (
+                f'<p class="nxv-note"><strong>{hit} “{escape(question)}”</strong> → '
+                f"{escape(found.best.chart_type)} ({found.best.score:.2f})</p>"
+            )
+
+    conditions = "".join(
+        f"<li>{escape(clause)}</li>" for clause in pair.use_when
+    )
+    avoid = "".join(f"<li>{escape(clause)}</li>" for clause in pair.do_not_use_when)
+    parts.append(
+        f'<details class="nxv-details"><summary>When to use it</summary>'
+        f"<ul class=\"nxv-conditions\">{conditions}</ul>"
+        f'<p class="nxv-note">Not this chart when:</p>'
+        f"<ul class=\"nxv-conditions nxv-conditions--avoid\">{avoid}</ul></details>"
+    )
+
+    return (
+        f'<div class="nxv-card nxv-gallery__item" data-chart-type="{escape(pair.chart_type)}">'
+        f'<div class="nxv-card__header"><h3 class="nxv-card__title">'
+        f"{escape(_humanise(pair.name))}</h3>"
+        f'<span class="nxv-card__subtitle">{escape(pair.chart_type)}</span></div>'
+        f'<div class="nxv-card__body">{"".join(parts)}{retrieved}</div></div>'
+    )
+
+
 def build_gallery(limit: int | None = None) -> str:
     corpus = seed()
     pairs = list(corpus)[:limit] if limit else list(corpus)
@@ -643,6 +783,7 @@ def _page(*, title: str, lede: str, body: str, nav_active: str) -> str:
         ("index", "index.html", "Reference renderer"),
         ("usecase", "usecase.html", "Walkthrough"),
         ("widgets", "widgets.html", "Combining charts"),
+        ("pipeline", "pipeline.html", "Pipeline & progress"),
         ("gallery", "gallery.html", "Corpus gallery"),
     )
     nav = "".join(
@@ -698,6 +839,7 @@ def write(out_dir: str | Path, *, limit: int | None = None) -> list[Path]:
         _write(target / "index.html", build_reference()),
         _write(target / "usecase.html", build_use_case()),
         _write(target / "widgets.html", build_widgets()),
+        _write(target / "pipeline.html", build_pipeline()),
         _write(target / "gallery.html", build_gallery(limit)),
         _write(target / "playground.css", _playground_css()),
         _write(target / "playground.js", _playground_js()),
@@ -831,8 +973,26 @@ button[aria-pressed="true"] {
   gap: calc(var(--nxv-space) * 2);
   grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
 }
+/* Time-axis charts need horizontal room: a gantt's last bar and a milestone's
+   last label are the first things to go when the card narrows, and both are
+   the end of the story. The corpus gallery's rings and donuts do not care. */
+.nxv-gallery--wide { grid-template-columns: repeat(auto-fill, minmax(520px, 1fr)); }
 .nxv-gallery__item[hidden] { display: none; }
 .nxv-overview { color: var(--nxv-text); margin: var(--nxv-space) 0 0; }
+.nxv-note {
+  color: var(--nxv-text-muted);
+  font-size: var(--nxv-font-size-sm);
+  margin: var(--nxv-space) 0 2px;
+}
+/* The routing conditions, set small — they are reference, not prose. */
+.nxv-conditions {
+  margin: 0 0 var(--nxv-space);
+  padding-left: 18px;
+  color: var(--nxv-text-muted);
+  font-size: var(--nxv-font-size-sm);
+  line-height: 1.5;
+}
+.nxv-conditions--avoid { color: var(--nxv-text-subtle, var(--nxv-text-muted)); }
 .nxv-insight {
   border-left: 3px solid var(--nxv-accent);
   color: var(--nxv-text-secondary);

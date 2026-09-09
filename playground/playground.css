@@ -116,8 +116,26 @@ button[aria-pressed="true"] {
   gap: calc(var(--nxv-space) * 2);
   grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
 }
+/* Time-axis charts need horizontal room: a gantt's last bar and a milestone's
+   last label are the first things to go when the card narrows, and both are
+   the end of the story. The corpus gallery's rings and donuts do not care. */
+.nxv-gallery--wide { grid-template-columns: repeat(auto-fill, minmax(520px, 1fr)); }
 .nxv-gallery__item[hidden] { display: none; }
 .nxv-overview { color: var(--nxv-text); margin: var(--nxv-space) 0 0; }
+.nxv-note {
+  color: var(--nxv-text-muted);
+  font-size: var(--nxv-font-size-sm);
+  margin: var(--nxv-space) 0 2px;
+}
+/* The routing conditions, set small — they are reference, not prose. */
+.nxv-conditions {
+  margin: 0 0 var(--nxv-space);
+  padding-left: 18px;
+  color: var(--nxv-text-muted);
+  font-size: var(--nxv-font-size-sm);
+  line-height: 1.5;
+}
+.nxv-conditions--avoid { color: var(--nxv-text-subtle, var(--nxv-text-muted)); }
 .nxv-insight {
   border-left: 3px solid var(--nxv-accent);
   color: var(--nxv-text-secondary);

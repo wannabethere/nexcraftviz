@@ -24088,7 +24088,7 @@ pairs:
         "y": {
           "field": "points",
           "type": "quantitative",
-          "title": "Points remaining"
+          "title": "Budget remaining"
         },
         "color": {
           "field": "series",
@@ -24344,7 +24344,10 @@ pairs:
             "color": {
               "field": "status",
               "type": "nominal",
-              "title": "Status"
+              "title": "Status",
+              "legend": {
+                "orient": "bottom"
+              }
             },
             "tooltip": [
               {
@@ -24614,7 +24617,10 @@ pairs:
             "color": {
               "field": "status",
               "type": "nominal",
-              "title": "Status"
+              "title": "Status",
+              "legend": {
+                "orient": "bottom"
+              }
             },
             "tooltip": [
               {
