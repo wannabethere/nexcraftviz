@@ -25,7 +25,7 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Literal
 
 from nexcraftviz.compose.widget import Widget
 from nexcraftviz.data.profile import profile_rows
@@ -126,7 +126,7 @@ class Session:
         #: How much judgement a pipeline turn buys. "gates" is free, "full" adds
         #: the critic, "off" skips evaluation. A session-level setting rather
         #: than a per-message one because it is a deployment choice.
-        self.pipeline_evaluate = "gates"
+        self.pipeline_evaluate: Literal["gates", "full", "off"] = "gates"
         #: The last pipeline run, so a host can show the plan and the verdict
         #: rather than only the finished chart.
         self.last_run: Any = None
@@ -288,7 +288,7 @@ class Session:
             ),
             registry=self.registry,
             llm=llm,
-            evaluate=str(self.pipeline_evaluate),
+            evaluate=self.pipeline_evaluate,
         )
         return self.adopt_run(run, message=message)
 

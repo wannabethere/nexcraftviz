@@ -40,7 +40,10 @@ dev = [
 nexcraftviz = "nexcraftviz.cli:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["nexcraftviz"]
+# The harness ships. `harness check` is most useful to someone who installed the
+# package and is wondering why nothing renders — which is exactly the person a
+# repo-only tool would not reach.
+packages = ["nexcraftviz", "harness"]
 
 [tool.ruff]
 line-length = 100

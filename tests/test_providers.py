@@ -253,13 +253,18 @@ def test_the_model_comes_from_the_same_env_var_as_genieml(monkeypatch) -> None:
 def test_the_core_never_imports_a_provider_sdk() -> None:
     """The whole package must stay usable with no provider installed."""
     import pathlib
+    import re
+
+    # Anchored to a real import statement. A substring match also flags
+    # `from ...providers import openai_runner`, which is a reference to our own
+    # symbol and precisely what the module boundary is for.
+    imports_sdk = re.compile(r"^\s*(?:import\s+openai|from\s+openai)(?:[.\s]|$)", re.MULTILINE)
 
     root = pathlib.Path(__file__).parent.parent / "nexcraftviz"
     offenders = []
     for path in root.rglob("*.py"):
         if path.name in ("providers.py",) or "__pycache__" in str(path):
             continue
-        text = path.read_text(encoding="utf-8")
-        if "import openai" in text or "from openai" in text:
+        if imports_sdk.search(path.read_text(encoding="utf-8")):
             offenders.append(str(path.relative_to(root)))
     assert not offenders, offenders

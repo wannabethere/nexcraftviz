@@ -1,6 +1,6 @@
 PY := ./.venv/bin/python
 
-.PHONY: help venv test lint fmt typecheck check corpus serve eval-live skill-reference clean
+.PHONY: help venv test lint fmt typecheck check corpus serve eval-live harness skill-reference clean
 
 help:
 	@echo "venv       create .venv and install the package with dev+render extras"
@@ -12,6 +12,7 @@ help:
 	@echo "corpus     report corpus coverage and validation status"
 	@echo "serve      run the HTTP API and serve the embed"
 	@echo "eval-live  run the prompt evals against a real model (needs a key)"
+	@echo "harness    check the environment, then run the scenarios offline"
 	@echo "skill-reference  regenerate the Claude Code skill's operation reference"
 
 venv:
@@ -50,3 +51,7 @@ skill-reference:
 clean:
 	rm -rf .pytest_cache .ruff_cache .mypy_cache dist build
 	find . -name __pycache__ -type d -prune -exec rm -rf {} +
+
+harness:
+	$(PY) -m nexcraftviz.cli harness check
+	$(PY) -m nexcraftviz.cli harness run

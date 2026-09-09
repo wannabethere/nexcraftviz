@@ -14,3 +14,6 @@ scratch/
 # Secrets. .env.example is committed; .env is not.
 .env
 .env.local
+
+# Harness runs are local evidence, not source.
+harness/results/*.json

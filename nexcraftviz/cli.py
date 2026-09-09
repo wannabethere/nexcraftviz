@@ -97,6 +97,35 @@ def main(argv: list[str] | None = None) -> int:
     p_eval.add_argument("--model", default="", help="Override OPENAI_MODEL.")
     p_eval.add_argument("--json", action="store_true")
 
+    p_harness = sub.add_parser(
+        "harness", help="Set up, check, run and report on the chart pipeline."
+    )
+    harness_sub = p_harness.add_subparsers(dest="harness_command", required=True)
+    harness_sub.add_parser(
+        "check", help="Report every prerequisite and whether it is satisfied."
+    )
+    h_setup = harness_sub.add_parser(
+        "setup", help="Scaffold .env and directories; print what is left to do."
+    )
+    h_setup.add_argument("--root", help="Where to write .env (default: the current directory).")
+    h_run = harness_sub.add_parser("run", help="Run the pipeline over the scenarios.")
+    h_run.add_argument("--scenarios", help="A scenario directory (default: harness/scenarios).")
+    h_run.add_argument(
+        "--live", action="store_true",
+        help="Use a real model. Without this the run is offline and only the "
+             "deterministic half is measured.",
+    )
+    h_run.add_argument(
+        "--critic", action="store_true",
+        help="Also ask the LLM critic. Implies --live.",
+    )
+    h_run.add_argument("--only", help="Run one scenario by name.")
+    h_run.add_argument("-v", "--verbose", action="store_true", help="Print each run's trace.")
+    h_run.add_argument("--json", action="store_true", help="Print the summary as JSON.")
+    h_report = harness_sub.add_parser("report", help="Re-print the last run, or compare two.")
+    h_report.add_argument("--compare", nargs=2, metavar=("BEFORE", "AFTER"))
+    h_report.add_argument("--json", action="store_true")
+
     sub.add_parser("config", help="Show the resolved configuration and where it came from.")
 
     sub.add_parser("mcp", help="Run the MCP server over stdio.")
@@ -167,6 +196,8 @@ def _dispatch(args: argparse.Namespace) -> int:
         return _cmd_serve(args)
     if args.command == "eval":
         return _cmd_eval(args)
+    if args.command == "harness":
+        return _cmd_harness(args)
     if args.command == "config":
         return _cmd_config(args)
     if args.command == "mcp":
@@ -383,6 +414,88 @@ def _cmd_eval(args: argparse.Namespace) -> int:
     if args.json:
         argv += ["--json"]
     return eval_main(argv)
+
+
+def _cmd_harness(args: argparse.Namespace) -> int:
+    """check / setup / run / report.
+
+    Imported here rather than at module scope: the harness pulls in the whole
+    agent layer, and `nexcraftviz validate` should not pay for that.
+    """
+    try:
+        from harness import check_environment, load_scenarios, report_run, setup_environment
+        from harness.report import compare
+        from harness.run import RESULTS_DIR, latest_result, run_sync, save_results
+    except ImportError as exc:  # pragma: no cover — only when installed without it
+        print(f"the harness is not available in this install: {exc}", file=sys.stderr)
+        return 1
+
+    if args.harness_command == "check":
+        report = check_environment()
+        print(report.text())
+        # Offline is the bar: a machine that cannot run the deterministic half
+        # is broken, whereas a missing key is a configuration step.
+        return 0 if report.can_run_offline else 1
+
+    if args.harness_command == "setup":
+        print(setup_environment(args.root).text(), end="")
+        return 0
+
+    if args.harness_command == "run":
+        scenarios = load_scenarios(args.scenarios)
+        if args.only:
+            scenarios = [s for s in scenarios if s.name == args.only]
+            if not scenarios:
+                raise ValueError(f"no scenario named {args.only!r}")
+        if not scenarios:
+            raise ValueError("no scenarios found")
+
+        live = args.live or args.critic
+        llm = _harness_runner() if live else None
+        results = run_sync(scenarios, llm=llm, evaluate="full" if args.critic else "gates")
+        path = save_results(results)
+
+        if args.json:
+            from harness.report import summarise
+
+            print(json.dumps(summarise(results), indent=2))
+        else:
+            if not live:
+                print("offline run: no model was called, so only the deterministic "
+                      "half is measured.\n")
+            print(report_run(results, verbose=args.verbose), end="")
+            print(f"saved to {path}")
+        return 0 if all(r.passed for r in results) else 1
+
+    if args.harness_command == "report":
+        if args.compare:
+            print(compare(Path(args.compare[0]), Path(args.compare[1])), end="")
+            return 0
+        newest = latest_result()
+        if newest is None:
+            print(f"no runs found in {RESULTS_DIR}", file=sys.stderr)
+            return 1
+        payload = json.loads(newest.read_text(encoding="utf-8"))
+        if args.json:
+            print(json.dumps(payload, indent=2))
+        else:
+            scopes = {r.get("graded", "full") for r in payload["results"]}
+            scope = "" if scopes == {"full"} else f"  [{'+'.join(sorted(scopes))}]"
+            print(f"{newest.name} — {payload['at']}{scope}")
+            for result in payload["results"]:
+                mark = "pass" if result["passed"] else "FAIL"
+                reason = result["error"] or "; ".join(result["problems"])
+                print(f"  [{mark}] {result['scenario']}" + (f" — {reason}" if reason else ""))
+        return 0
+
+    raise ValueError(f"unknown harness command {args.harness_command!r}")
+
+
+def _harness_runner():
+    """A model runner for a live harness run."""
+    from nexcraftviz.integrations.providers import openai_runner
+
+    return openai_runner()
 
 
 def _cmd_mcp(args: argparse.Namespace) -> int:

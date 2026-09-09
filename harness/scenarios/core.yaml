@@ -1,0 +1,73 @@
+# The scenarios the pipeline has to get right.
+#
+# Loose about the chart, strict about the mistakes: an exact-spec assertion
+# fails on every harmless rewording, while "a rate is never summed" catches a
+# real regression. So a case names acceptable chart types, the fields that must
+# appear, and the gates that must hold.
+
+scenarios:
+
+  ranked_categories:
+    question: "Which region brought in the most revenue?"
+    note: "The most common shape in the corpus. A ranked bar, sorted."
+    rows:
+      - {region: "North", revenue: 152.0}
+      - {region: "West", revenue: 128.0}
+      - {region: "East", revenue: 96.0}
+      - {region: "South", revenue: 71.0}
+    expect_chart_type: [bar, grouped_bar]
+    expect_fields: [region, revenue]
+
+  trend_over_time:
+    question: "How has revenue moved month by month?"
+    note: "A line or an area are both right; failing the second measures conformity."
+    rows:
+      - {month: "2026-01-01", revenue: 120.5}
+      - {month: "2026-02-01", revenue: 141.25}
+      - {month: "2026-03-01", revenue: 133.0}
+      - {month: "2026-04-01", revenue: 168.75}
+    expect_chart_type: [line, area]
+    expect_fields: [month, revenue]
+
+  rate_must_not_be_summed:
+    question: "Show completion rate by team"
+    note: >
+      Adding four teams' completion percentages together gives a meaningless
+      340%. The data_honesty gate exists for this; the scenario keeps it honest.
+    rows:
+      - {team: "Platform", completion_pct: 82.0}
+      - {team: "Data", completion_pct: 91.0}
+      - {team: "Growth", completion_pct: 64.0}
+    expect_fields: [team, completion_pct]
+    require_gates: [validates, data_honesty]
+
+  explicit_chart_type_is_obeyed:
+    question: "Show revenue by region as a line chart"
+    note: >
+      The extractor reads the type without a model call. If the plan comes back
+      as a bar, either the floor stopped being applied or the generator ignored
+      the plan — and matches_plan should say which.
+    rows:
+      - {region: "North", revenue: 152.0}
+      - {region: "West", revenue: 128.0}
+      - {region: "East", revenue: 96.0}
+    expect_chart_type: [line, multi_line]
+
+  top_n_is_honoured:
+    question: "Top 3 products by revenue"
+    rows:
+      - {product: "A", revenue: 40.0}
+      - {product: "B", revenue: 92.0}
+      - {product: "C", revenue: 61.0}
+      - {product: "D", revenue: 18.0}
+      - {product: "E", revenue: 77.0}
+    expect_fields: [product, revenue]
+    require_gates: [validates, matches_plan]
+
+  single_number:
+    question: "What is total revenue?"
+    note: "One number is a KPI, not a chart with one bar."
+    rows:
+      - {total_revenue: 447.0}
+    expect_fields: []
+    require_gates: [validates]
