@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "nexcraftviz",
+      "runtimeExecutable": "./.venv/bin/python",
+      "runtimeArgs": ["-m", "nexcraftviz.cli", "serve", "--port", "8808", "--no-model"],
+      "port": 8808,
+      "url": "http://localhost:8808"
+    }
+  ]
+}

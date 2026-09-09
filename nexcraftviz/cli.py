@@ -372,7 +372,11 @@ def _cmd_serve(args: argparse.Namespace) -> int:
     llm = None if args.no_model else default_runner(model=args.model or None)
     model = args.model or os.getenv("OPENAI_MODEL", "") or DEFAULT_OPENAI_MODEL
 
+    from nexcraftviz.app.api import PLAYGROUND_DIR
+
     print(f"nexcraftviz on http://{args.host}:{args.port}")
+    if os.path.isdir(PLAYGROUND_DIR):
+        print(f"  demo:   http://{args.host}:{args.port}/playground/")
     print(f"  embed:  http://{args.host}:{args.port}/embed/nexcraftviz.js")
     print(f"  tools:  http://{args.host}:{args.port}/v1/tools")
     if llm is None:

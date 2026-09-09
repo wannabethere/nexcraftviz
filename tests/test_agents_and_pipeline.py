@@ -626,3 +626,36 @@ async def test_a_host_driven_run_lands_in_the_same_session_state(rows, stub_llm)
     session.adopt_run(run, message="revenue by region")
     assert session.has_chart
     assert session.state()["kind"] == "chart"
+
+
+def test_data_honesty_gate_catches_a_property_value_printed_as_a_label():
+    """`{"text": {"value": "center"}}` beside `"align": "center"` is the property
+    copied one line too far. It validates, compiles and draws the word "center"
+    in the middle of the chart — seventeen pairs in the shipped corpus do."""
+    spec = Spec({
+        "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+        "data": {"values": [{"pct": 0.62}]},
+        "layer": [
+            {"mark": {"type": "arc"}, "encoding": {"theta": {"field": "pct"}}},
+            {"mark": {"type": "text", "align": "center", "baseline": "middle"},
+             "encoding": {"text": {"value": "center"}}},
+        ],
+    })
+    result = _gate(run_gates(spec, rows=[{"pct": 0.62}], skip=("renders",)), "data_honesty")
+    assert not result.passed
+    assert "not a label" in result.detail
+
+
+def test_a_real_hard_coded_label_is_left_alone():
+    """Only the property keywords are suspicious. "Total" is a label."""
+    spec = Spec({
+        "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+        "data": {"values": [{"pct": 0.62}]},
+        "layer": [
+            {"mark": {"type": "arc"}, "encoding": {"theta": {"field": "pct"}}},
+            {"mark": {"type": "text"}, "encoding": {"text": {"value": "Total"}}},
+        ],
+    })
+    assert _gate(
+        run_gates(spec, rows=[{"pct": 0.62}], skip=("renders",)), "data_honesty"
+    ).passed

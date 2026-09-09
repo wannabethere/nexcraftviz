@@ -37,6 +37,16 @@ _NON_ADDITIVE = ("pct", "percent", "rate", "ratio", "avg", "average", "mean",
 #: this size compresses to well under a kilobyte.
 _MIN_PNG_BYTES = 2000
 
+#: Vega keywords that are valid for `align`, `baseline` and friends and are
+#: never a label anyone meant to print. A text encoding carrying one is a
+#: value copy-pasted from the property next to it — the shipped corpus has
+#: seventeen donuts and gauges displaying the literal word "center" in the
+#: middle of the ring, which validates, compiles and renders perfectly.
+_PROPERTY_KEYWORDS = frozenset({
+    "center", "middle", "left", "right", "top", "bottom",
+    "start", "end", "baseline", "alphabetic", "line-top", "line-bottom",
+})
+
 Gate = Callable[..., GateResult]
 
 
@@ -224,6 +234,31 @@ def _data_honesty(
             if definition.get("type") == "quantitative":
                 problems.append(f"{channel}: {field_name} is an identifier plotted as a value")
 
+    # A hard-coded label that is really a property value. Checked separately
+    # because these encodings bind no field at all, so the loop above skips them.
+    problems.extend(_placeholder_labels(spec))
+
     if problems:
         return GateResult(gate="data_honesty", passed=False, detail="; ".join(problems[:3]))
     return GateResult(gate="data_honesty", passed=True)
+
+
+def _placeholder_labels(spec: Spec) -> list[str]:
+    """Text encodings printing a Vega keyword instead of a value.
+
+    ``{"text": {"value": "center"}}`` next to ``"align": "center"`` is the
+    property copied one line too far. It validates, it compiles, and it draws
+    the word "center" in the middle of the chart — so nothing but a human
+    looking at it, or this, will ever notice.
+    """
+    problems: list[str] = []
+    for _, channel, definition in spec.encodings():
+        if channel != "text":
+            continue
+        value = definition.get("value")
+        if isinstance(value, str) and value.strip().lower() in _PROPERTY_KEYWORDS:
+            problems.append(
+                f"text: prints the literal {value!r} — that is a property value, "
+                f"not a label"
+            )
+    return problems

@@ -28,6 +28,12 @@ from nexcraftviz.spec.model import Spec
 
 #: Where the embed is served from, relative to this package.
 EMBED_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "embed")
+#: The playground lives at the repo root rather than inside the package —
+#: it is a demo, not a shipped asset — so it is only mounted when present.
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+PLAYGROUND_DIR = os.path.join(_REPO_ROOT, "playground")
+#: The theme bundle the demo pages link to as `../assets/nexcraftviz.css`.
+ASSETS_DIR = os.path.join(_REPO_ROOT, "assets")
 
 
 class SessionStore:
@@ -338,6 +344,27 @@ def create_app(store: SessionStore | None = None, *, llm: Any = None) -> Any:
         if not os.path.exists(path):  # pragma: no cover
             raise HTTPException(404, "embed script not found")
         return FileResponse(path, media_type="application/javascript")
+
+    # -- the playground ----------------------------------------------------
+    #
+    # Mounted so the demo pages are reachable over HTTP. `playground/embed.html`
+    # fetches /v1/health and drives a session, which cannot work from a file://
+    # URL — the browser blocks the request and the page looks broken for a
+    # reason that has nothing to do with the code.
+    if os.path.isdir(PLAYGROUND_DIR):
+        from fastapi.staticfiles import StaticFiles
+
+        app.mount(
+            "/playground",
+            StaticFiles(directory=PLAYGROUND_DIR, html=True),
+            name="playground",
+        )
+        # The pages link to `../assets/nexcraftviz.css`, so mounting the
+        # playground alone serves them without their theme — every colour,
+        # every tile border and the whole rich-table vocabulary come from that
+        # one file, so the page renders but looks broken.
+        if os.path.isdir(ASSETS_DIR):
+            app.mount("/assets", StaticFiles(directory=ASSETS_DIR), name="assets")
 
     return app
 
