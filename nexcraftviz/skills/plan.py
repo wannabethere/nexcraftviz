@@ -15,6 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from nexcraftviz.agents.artifacts import ChartPlan, Critique
 from nexcraftviz.agents.intent import apply_as_floor, extract_intent
 from nexcraftviz.data.profile import profile_rows
+from nexcraftviz.recommend.precedent import precedents
 from nexcraftviz.recommend.rules import recommend
 from nexcraftviz.skills.base import Skill, SkillResult, SkillSpec
 from nexcraftviz.spec.model import Spec
@@ -49,6 +50,7 @@ class PlanSkill(Skill[PlanIn, ChartPlan]):
     def user_payload(self, inputs: PlanIn) -> str:
         profile = profile_rows(inputs.rows)
         ranked = recommend(profile, question=inputs.question)
+        found = precedents(profile, question=inputs.question)
         intent = extract_intent(inputs.question)
 
         payload: dict[str, Any] = {
@@ -60,6 +62,13 @@ class PlanSkill(Skill[PlanIn, ChartPlan]):
                 {"chart_type": r.chart_type, "score": round(r.score, 2), "reason": r.reason}
                 for r in ranked
             ],
+            # What the corpus actually did for data shaped like this, quoting
+            # the worked example. The rules say what *can* be drawn; these say
+            # what was worth drawing, which is the part the shape cannot answer
+            # — one dimension and one measure is a bar, a donut, a funnel and a
+            # waterfall, and only the precedent distinguishes them.
+            "precedents": found.to_prompt_list(),
+            "shape_signature": found.signature,
             # What the question said outright, already parsed. Free, and stable
             # across runs in a way a model's reading of the same phrase is not.
             "extracted": intent.to_dict(),

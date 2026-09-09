@@ -62,6 +62,71 @@ in the loop, and undoable — every edit returns its own inverse patch.
 
 BI export (PowerBI, Tableau) is the remaining milestone; see `docs/`.
 
+## Choosing the chart
+
+The shape of the data says what *can* be drawn. It cannot say what is worth
+drawing: one dimension and one measure is a bar, a donut, a funnel and a
+waterfall, and nothing about the columns distinguishes them.
+
+The corpus can. All 200 pairs carry the routing metadata — the abstract
+`data_shape` each suits, the `use_when` conditions that select it, the
+`do_not_use_when` conditions that rule it out (each naming what to use instead),
+and real `example_questions`. Matching against that is **retrieval, not a second
+rules engine**: adding a pair improves selection with no code change.
+
+```bash
+nexcraftviz recommend results.json "which units are behind on training?"
+```
+
+```
+from the shape alone (rules):
+  grouped_bar     0.75  3 measures per category
+
+from the corpus (50 pairs fit this shape, matched by lexical):
+  bar             0.23  What is the distribution of users across organizational
+                        units? — Rank items by a single measure.
+  donut           0.20  Show training outcome distribution — Composition + total
+                        in one glyph.
+```
+
+The precedents go to the planner as evidence, quoted so the reasoning can be
+checked. The planner still decides — charts come from agents.
+
+### Two gates that stay deterministic
+
+**A chart with nothing to vary over shows one value.** The corpus says so
+itself — the KPI pairs' first `use_when` is "Answer is a single scalar" — so a
+multi-row result cannot be one, however well the words match.
+
+**Not every date is an axis.** `next_audit` on a per-unit result describes each
+row; plotting against it draws a line through unrelated points. A chart
+requiring a date is only satisfied when `DataProfile.time_axis` says the rows
+are observations over one.
+
+### Lexical or semantic
+
+```
+NEXCRAFTVIZ_RETRIEVAL   lexical | qdrant        (default: lexical)
+QDRANT_URL / QDRANT_HOST / QDRANT_PORT / QDRANT_API_KEY
+NEXCRAFTVIZ_EMBED_MODEL → OPENAI_EMBED_MODEL → text-embedding-3-small
+```
+
+`lexical` weights token overlap by how discriminative each word is across the
+corpus — needs no key, no network and no index, and does not know that "share
+of the total" and "composition" are the same thing. `qdrant` uses embeddings in
+the vector store genieml already runs, and is configured through the same
+variables so one environment serves both stacks:
+
+```bash
+nexcraftviz corpus index --recreate   # once per corpus version
+nexcraftviz corpus retrieval          # what is actually configured
+```
+
+**Similarity re-ranks; it never overrides the shape gate.** A vector store will
+happily return a trend chart for date-free data because the words matched. A
+store that is down falls back to lexical matching and says so, because a silent
+downgrade looks like a working system giving worse answers for no reason.
+
 ## The pipeline
 
 ```

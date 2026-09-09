@@ -18,7 +18,8 @@ def test_check_reports_every_prerequisite():
     report = check_environment()
     names = {c.name for c in report.checks}
     assert names == {
-        "package", "prompts", "themes", "corpus", "render", "fonts", "api_key", "agents"
+        "package", "prompts", "themes", "corpus", "render", "fonts", "api_key",
+        "agents", "retrieval",
     }
 
 

@@ -255,10 +255,14 @@ def test_the_core_never_imports_a_provider_sdk() -> None:
     import pathlib
     import re
 
-    # Anchored to a real import statement. A substring match also flags
-    # `from ...providers import openai_runner`, which is a reference to our own
-    # symbol and precisely what the module boundary is for.
-    imports_sdk = re.compile(r"^\s*(?:import\s+openai|from\s+openai)(?:[.\s]|$)", re.MULTILINE)
+    # Module scope only, and anchored to a real import statement.
+    #
+    # The rule being enforced is "the package stays importable with no provider
+    # SDK installed", so a lazy import inside a function is the *fix*, not a
+    # violation — it is how every provider call here is written. Allowing any
+    # leading whitespace flagged those; matching a substring also flagged
+    # `from ...providers import openai_runner`, our own symbol.
+    imports_sdk = re.compile(r"^(?:import\s+openai|from\s+openai)(?:[.\s]|$)", re.MULTILINE)
 
     root = pathlib.Path(__file__).parent.parent / "nexcraftviz"
     offenders = []

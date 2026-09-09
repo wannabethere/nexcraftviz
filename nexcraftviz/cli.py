@@ -126,6 +126,21 @@ def main(argv: list[str] | None = None) -> int:
     h_report.add_argument("--compare", nargs=2, metavar=("BEFORE", "AFTER"))
     h_report.add_argument("--json", action="store_true")
 
+    p_corpus = sub.add_parser(
+        "corpus", help="Inspect the corpus, or index it for semantic retrieval."
+    )
+    corpus_sub = p_corpus.add_subparsers(dest="corpus_command", required=True)
+    corpus_sub.add_parser("report", help="Coverage and validation status.")
+    c_index = corpus_sub.add_parser(
+        "index", help="Embed the corpus into the vector store (needs the retrieval extra)."
+    )
+    c_index.add_argument(
+        "--recreate", action="store_true",
+        help="Recreate the collection. Needed the first time and after a corpus change "
+             "that alters the embedding dimensions.",
+    )
+    corpus_sub.add_parser("retrieval", help="What retrieval is configured to do.")
+
     sub.add_parser("config", help="Show the resolved configuration and where it came from.")
 
     sub.add_parser("mcp", help="Run the MCP server over stdio.")
@@ -196,6 +211,8 @@ def _dispatch(args: argparse.Namespace) -> int:
         return _cmd_serve(args)
     if args.command == "eval":
         return _cmd_eval(args)
+    if args.command == "corpus":
+        return _cmd_corpus(args)
     if args.command == "harness":
         return _cmd_harness(args)
     if args.command == "config":
@@ -334,6 +351,8 @@ def _table_page(table: Any, body: str) -> str:
 
 
 def _cmd_recommend(args: argparse.Namespace) -> int:
+    from nexcraftviz.recommend.precedent import precedents
+    from nexcraftviz.recommend.retrieval import describe as describe_retrieval
     from nexcraftviz.recommend.rules import recommend
 
     profile = profile_rows(load_rows(args.data))
@@ -341,8 +360,21 @@ def _cmd_recommend(args: argparse.Namespace) -> int:
     print(f"shape: {result.shape_signature}")
     axis = profile.time_axis
     print(f"time axis: {axis.name if axis else '(none)'}")
+
+    print("\nfrom the shape alone (rules):")
     for entry in result:
         print(f"  {entry.chart_type:<18} {entry.score:.2f}  {entry.reason}")
+
+    # The rules say what the columns permit. The corpus says what was worth
+    # drawing, which is the question the shape cannot answer on its own.
+    found = precedents(profile, question=args.question)
+    backend = describe_retrieval()
+    print(f"\nfrom the corpus ({found.considered} pairs fit this shape, "
+          f"matched by {backend['effective']}):")
+    for entry in found:
+        print(f"  {entry.chart_type:<18} {entry.score:.2f}  {entry.why}")
+        if entry.caution:
+            print(f"  {'':<18}       caution: {entry.caution}")
     return 0
 
 
@@ -418,6 +450,43 @@ def _cmd_eval(args: argparse.Namespace) -> int:
     if args.json:
         argv += ["--json"]
     return eval_main(argv)
+
+
+def _cmd_corpus(args: argparse.Namespace) -> int:
+    from nexcraftviz.recommend import retrieval
+
+    if args.corpus_command == "report":
+        from nexcraftviz.corpus.report import report
+
+        return report()
+
+    if args.corpus_command == "retrieval":
+        state = retrieval.describe()
+        print(f"backend:    {state['backend']}")
+        print(f"effective:  {state['effective']}")
+        print(f"collection: {state['collection']}")
+        if state["embed_model"]:
+            print(f"embeddings: {state['embed_model']}")
+        for reason in state["reasons"]:
+            print(f"  - {reason}")
+        if state["effective"] == "lexical" and state["backend"] == "lexical":
+            print("\nLexical matching is the default and needs nothing. To use "
+                  "embeddings:\n  export NEXCRAFTVIZ_RETRIEVAL=qdrant  QDRANT_URL=...")
+        return 0
+
+    if args.corpus_command == "index":
+        import asyncio
+
+        try:
+            result = asyncio.run(retrieval.index_corpus(recreate=args.recreate))
+        except retrieval.RetrievalError as exc:
+            print(f"cannot index: {exc}", file=sys.stderr)
+            return 1
+        print(f"indexed {result['indexed']} pairs into {result['collection']!r} "
+              f"({result['dimensions']}d, {result['model']})")
+        return 0
+
+    raise ValueError(f"unknown corpus command {args.corpus_command!r}")
 
 
 def _cmd_harness(args: argparse.Namespace) -> int:

@@ -110,6 +110,7 @@ def check_environment() -> CheckReport:
         _check_fonts(),
         _check_key(),
         _check_agents(),
+        _check_retrieval(),
     ])
 
 
@@ -254,3 +255,29 @@ def _check_agents() -> Check:
         return Check("agents", "ok", f"{len(registry)} roles filled")
     except Exception as exc:  # noqa: BLE001
         return Check("agents", "missing", str(exc))
+
+
+def _check_retrieval() -> Check:
+    """Which backend picks chart types, and whether it can actually run.
+
+    Never a blocker: lexical matching needs nothing and works. This exists so a
+    vector store that is configured but unreachable is reported here rather than
+    discovered as quietly worse chart choices.
+    """
+    try:
+        from nexcraftviz.recommend import retrieval
+
+        state = retrieval.describe()
+    except Exception as exc:  # noqa: BLE001
+        return Check("retrieval", "degraded", f"could not be read: {exc}")
+
+    if state["backend"] == "lexical":
+        return Check("retrieval", "ok", "lexical matching over the corpus (no key needed)")
+    if state["effective"] == "qdrant":
+        return Check("retrieval", "ok", f"qdrant, collection {state['collection']!r}")
+    return Check(
+        "retrieval", "degraded",
+        f"qdrant asked for but unavailable ({'; '.join(state['reasons']) or 'unknown'}) "
+        f"— falling back to lexical matching",
+        fix="export QDRANT_URL=...  (or unset NEXCRAFTVIZ_RETRIEVAL to use lexical)",
+    )

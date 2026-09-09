@@ -56,6 +56,13 @@ select = ["E", "F", "I", "UP", "B"]
 asyncio_mode = "auto"
 testpaths = ["tests"]
 
+# Optional extras and stub-less libraries. These are imported lazily behind a
+# feature check, so "not installed" is the normal case rather than an error —
+# and a real missing import elsewhere is easier to see once these stop shouting.
+[[tool.mypy.overrides]]
+module = ["qdrant_client.*", "mcp.*", "yaml", "jsonschema", "vl_convert", "dotenv"]
+ignore_missing_imports = true
+
 [tool.mypy]
 python_version = "3.11"
 warn_unused_ignores = true
