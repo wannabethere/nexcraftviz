@@ -246,6 +246,29 @@ def _compose(
     return {"spec": composed.raw, "valid": report.ok, "errors": [str(i) for i in report.errors]}
 
 
+def _build_chart(
+    rows: list[dict[str, Any]], chart_type: str = "", question: str = "", title: str = ""
+) -> dict[str, Any]:
+    from nexcraftviz.recommend.build import BuildError, build_best, build_chart
+
+    try:
+        if chart_type:
+            spec = build_chart(rows, chart_type=chart_type, question=question, title=title)
+            built = chart_type
+        else:
+            spec, built = build_best(rows, question=question, title=title)
+    except BuildError as exc:
+        return {"error": str(exc)}
+
+    _, report = validate(spec, data=rows, max_tier=3)
+    return {
+        "spec": spec.raw,
+        "chart_type": built,
+        "valid": report.ok,
+        "errors": [str(i) for i in report.errors],
+    }
+
+
 def _table(rows: list[dict[str, Any]], title: str = "") -> dict[str, Any]:
     table = build_table(rows, title=title)
     return {
@@ -361,6 +384,20 @@ TOOLS: tuple[Tool, ...] = (
             "resolve_scales": {"type": "string", "enum": ["independent", "shared"]},
         }, ["specs"]),
         _compose,
+    ),
+    Tool(
+        "viz_build_chart",
+        "Build a correct chart from rows with no model call. The shape rules "
+        "pick the type and the encodings come from the profile, so every field "
+        "exists and every type matches. Start here, then refine with "
+        "viz_apply_ops rather than writing a spec from scratch.",
+        _object({
+            "rows": _ROWS,
+            "chart_type": {"type": "string", "description": "Force a type, or omit."},
+            "question": {"type": "string"},
+            "title": {"type": "string"},
+        }, ["rows"]),
+        _build_chart,
     ),
     Tool(
         "viz_table",

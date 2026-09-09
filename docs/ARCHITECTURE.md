@@ -305,6 +305,37 @@ weight:
   is an *attribute*. `DataProfile.time_axis` separates the two, and without it
   the rules recommended a line chart for data containing no series.
 
+### `recommend.build` — the chart, without a model
+
+`rules` decides *which* chart; `build` constructs it. Together they mean the
+table-first flow completes with no provider configured: rows arrive, the table
+renders, a chart appears. A model becomes an improvement on that rather than a
+precondition for it — and `Session.turn` falls back here when `viz.generate` is
+routed with no model available.
+
+The specs are deliberately plain: correct encodings, sensible sorting and
+aggregation, and **no styling**, because a baked-in colour would silently
+override whatever theme is applied afterwards. What it guarantees is the part
+that is hard to get right by hand and easy to get wrong by prompt — every
+encoded field exists, every measurement type matches the profile, and the
+aggregation matches the grain.
+
+Three decisions carry most of the value:
+
+- **A rate is averaged, not summed.** Adding four regions' completion
+  percentages gives a meaningless 340%.
+- **The question narrows the columns.** "revenue by region" over data that also
+  has `orders` charts revenue — otherwise the rules see two measures and
+  reasonably build a grouped bar answering a question nobody asked.
+- **The reported type is the type actually built.** An earlier version reported
+  `grouped_bar` and silently constructed a plain bar when there was only one
+  dimension; now one dimension with several measures folds them into a series,
+  which is the chart that shape actually calls for.
+
+A single row returns a `kpi` payload rather than failing — "what is my total?"
+is the most basic question there is, and it should not error just because one
+number is not a Vega chart.
+
 ### `corpus`
 
 200 hand-authored chart pairs across 20 chart types, each carrying a

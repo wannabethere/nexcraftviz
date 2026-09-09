@@ -72,9 +72,22 @@ def main(argv: list[str] | None = None) -> int:
     p_table.add_argument("--out", help="Write HTML here (default: the spec, to stdout).")
     p_table.add_argument("--title", default="", help="Table title.")
 
+    p_chart = sub.add_parser("chart", help="Build a chart from a data file.")
+    p_chart.add_argument("data", help="Path to .csv or .json.")
+    p_chart.add_argument("question", nargs="?", default="", help="What you want to see.")
+    p_chart.add_argument("--type", dest="chart_type", default="", help="Force a chart type.")
+    p_chart.add_argument("--theme", default="", help="Apply a theme.")
+    p_chart.add_argument("--title", default="")
+    p_chart.add_argument(
+        "--out",
+        help="Write here — .html, .png, .svg or .json. Omit for the spec on stdout.",
+    )
+
     p_recommend = sub.add_parser("recommend", help="Rank chart types for a data file.")
     p_recommend.add_argument("data", help="Path to .csv or .json.")
-    p_recommend.add_argument("--question", default="", help="Nudge the ranking.")
+    p_recommend.add_argument(
+        "question", nargs="?", default="", help="Nudge the ranking and narrow the columns."
+    )
 
     p_gallery = sub.add_parser("gallery", help="Generate the playground pages.")
     p_gallery.add_argument("--out", default="playground", help="Output directory.")
@@ -157,6 +170,8 @@ def _dispatch(args: argparse.Namespace) -> int:
         return _cmd_theme(args)
     if args.command == "table":
         return _cmd_table(args)
+    if args.command == "chart":
+        return _cmd_chart(args)
     if args.command == "recommend":
         return _cmd_recommend(args)
     if args.command == "gallery":
@@ -298,6 +313,55 @@ def _table_page(table: Any, body: str) -> str:
         f'<h3 class="nxv-card__title">{title}</h3></div>'
         f'<div class="nxv-card__body">{body}</div></div></body></html>'
     )
+
+
+def _cmd_chart(args: argparse.Namespace) -> int:
+    """Rows in, chart out — no model, no key."""
+    from nexcraftviz.recommend.build import BuildError, build_best, build_chart
+    from nexcraftviz.spec.validate import validate
+
+    rows = load_rows(args.data)
+    try:
+        if args.chart_type:
+            spec = build_chart(rows, chart_type=args.chart_type,
+                               question=args.question, title=args.title)
+            built = args.chart_type
+        else:
+            spec, built = build_best(rows, question=args.question, title=args.title)
+    except BuildError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
+    if args.theme:
+        from nexcraftviz.theme import apply_theme, strip_hardcoded_colours
+
+        spec = apply_theme(strip_hardcoded_colours(spec).spec, args.theme).spec
+
+    _, report = validate(spec, data=rows, max_tier=3)
+    print(f"built a {built} chart from {len(rows)} rows — {report.summary()}", file=sys.stderr)
+
+    if not args.out:
+        print(spec.to_json(indent=2))
+        return 0
+
+    # `.json` from `chart` means the Vega-Lite spec, not compiled Vega. The
+    # renderer reads `.json` as a render target, which is right for `render`
+    # and wrong here — asking this command for "the spec" should give you the
+    # one you can edit, theme and hand to a frontend.
+    if args.out.lower().endswith(".json"):
+        Path(args.out).write_text(spec.to_json(indent=2), encoding="utf-8")
+        print(f"wrote {args.out}", file=sys.stderr)
+        return 0
+
+    from nexcraftviz.render import RenderUnavailable, save
+
+    try:
+        target = save(spec, args.out)
+    except (RenderUnavailable, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 3
+    print(f"wrote {target}", file=sys.stderr)
+    return 0
 
 
 def _cmd_recommend(args: argparse.Namespace) -> int:

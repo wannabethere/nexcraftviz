@@ -3,6 +3,17 @@
 Agentic Vega-Lite charting: create, theme, edit, narrate and export charts from
 natural language — with the *deterministic* parts kept deterministic.
 
+**[docs/USAGE.md](docs/USAGE.md) — how to pass data in and get a chart out.**
+Start there if you just want to use it.
+
+```bash
+nexcraftviz chart revenue.csv "revenue by region" --out chart.html
+```
+
+No API key needed for that: the shape rules pick the chart type and a
+deterministic builder constructs it. A model makes charts better and makes
+*editing* possible; it is not a precondition for the first chart.
+
 ## The idea
 
 Most LLM charting works by asking a model to emit a whole Vega-Lite document,
@@ -39,6 +50,7 @@ in the loop, and undoable — every edit returns its own inverse patch.
 | `table` | The `table_with_cells` contract, plus a builder that turns rows into it with no model involved |
 | `theme` | One token source → a Vega config *and* a CSS bundle |
 | `recommend.rules` | Deterministic chart ranking from the profile |
+| `recommend.build` | ...and construction. Rows to a correct chart with no model call |
 | `compose` | Two ways to combine charts, plus placement operations with undo |
 | `skills` | The portable contract: render_prompt / parse / apply, prompts as data |
 | `agent` | The conversation — routing, sessions, undo, in either execution mode |

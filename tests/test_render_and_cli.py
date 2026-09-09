@@ -162,6 +162,40 @@ def test_render_command(spec_file: Path, tmp_path: Path, capsys) -> None:
     assert "wrote" in capsys.readouterr().out
 
 
+def test_chart_command_builds_without_a_model(csv_file: Path, capsys) -> None:
+    assert cli.main(["chart", str(csv_file), "revenue by region"]) == 0
+    spec = json.loads(capsys.readouterr().out)
+    assert spec["mark"] == "bar"
+    assert spec["data"]["values"]
+
+
+def test_chart_json_output_is_the_vega_lite_spec(csv_file: Path, tmp_path: Path) -> None:
+    """`.json` means "compiled Vega" to the renderer, which is right for
+    `render` and wrong here — asking for "the spec" should give the editable
+    one, and the round trip through `validate` proves it."""
+    out = tmp_path / "spec.json"
+    assert cli.main(["chart", str(csv_file), "revenue by region", "--out", str(out)]) == 0
+
+    spec = json.loads(out.read_text())
+    assert "mark" in spec, "compiled Vega has `marks`, not `mark`"
+    assert cli.main(["validate", str(out), "--data", str(csv_file)]) == 0
+
+
+def test_chart_command_honours_a_forced_type_and_theme(csv_file: Path, capsys) -> None:
+    assert cli.main(["chart", str(csv_file), "--type", "donut",
+                     "--theme", "nexcraftviz-dark"]) == 0
+    spec = json.loads(capsys.readouterr().out)
+    assert spec["mark"]["type"] == "arc"
+    assert "config" in spec
+
+
+def test_chart_command_refuses_data_it_cannot_chart(tmp_path: Path, capsys) -> None:
+    data = tmp_path / "text.json"
+    data.write_text(json.dumps([{"note": "a"}, {"note": "b"}]), encoding="utf-8")
+    assert cli.main(["chart", str(data)]) == 2
+    assert "error" in capsys.readouterr().err
+
+
 def test_ops_command_lists_the_algebra(capsys) -> None:
     assert cli.main(["ops"]) == 0
     output = capsys.readouterr().out

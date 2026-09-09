@@ -229,6 +229,12 @@ class Session:
 
         model_output: dict[str, Any] | None = None
         if handler.spec.uses_llm:
+            if llm is None and proposal.skill == "viz.generate":
+                # Creating a chart has a deterministic path, so a missing model
+                # should degrade rather than fail: the rules pick the type and
+                # the builder constructs it. A model refines that; it is not a
+                # precondition for getting a chart at all.
+                return self._build_without_model(proposal)
             if llm is None:
                 raise ValueError(
                     f"{proposal.skill} needs a model. Pass `llm=`, or use "
@@ -240,6 +246,39 @@ class Session:
             )
 
         return self.commit(proposal, model_output)
+
+    def _build_without_model(self, proposal: Proposal) -> Turn:
+        """Build a chart from the shape rules, with no model involved."""
+        from nexcraftviz.recommend.build import BuildError, build_best
+
+        question = str(proposal.inputs.get("question") or "")
+        try:
+            spec, chart_type = build_best(self.rows, question=question)
+        except BuildError as exc:
+            turn = Turn(id=proposal.turn_id, message=question, skill=proposal.skill,
+                        reply=str(exc), failed=[("viz.generate", str(exc))])
+            self.turns.append(turn)
+            return turn
+
+        previous = self._document_dict()
+        self.document = spec
+        if previous:
+            from nexcraftviz.spec.diff import diff
+
+            self._undo.append(("chart", diff(spec.raw, previous)))
+            self._redo.clear()
+
+        turn = Turn(
+            id=proposal.turn_id,
+            message=question,
+            skill=proposal.skill,
+            reply=f"Built a {chart_type.replace('_', ' ')} chart from the data shape. "
+                  f"Configure a model for a more considered chart and for editing.",
+            changes=[f"built a {chart_type} chart"],
+            warnings=["no model configured — this chart came from the shape rules"],
+        )
+        self.turns.append(turn)
+        return turn
 
     # -- history -----------------------------------------------------------
 

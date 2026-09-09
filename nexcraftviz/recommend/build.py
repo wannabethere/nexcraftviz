@@ -1,0 +1,498 @@
+"""Build a chart spec from the profile alone — no model.
+
+:mod:`nexcraftviz.recommend.rules` decides *which* chart. This builds it. The
+pair means the whole table-first flow works with no provider configured at all:
+rows arrive, the table renders, a chart appears, and a model is an *improvement*
+on that rather than a precondition for it.
+
+The specs here are deliberately plain — correct encodings, sensible sorting and
+aggregation, no styling. Styling is the theme's job, and a builder that baked
+in colours would silently override it. What this guarantees is the part that is
+actually hard to get right by hand and easy to get wrong by prompt: every
+encoded field exists, every measurement type matches the profile, and the
+aggregation matches the question's grain.
+"""
+from __future__ import annotations
+
+from typing import Any
+
+from nexcraftviz.data.profile import ColumnProfile, DataProfile, profile_rows
+from nexcraftviz.recommend.rules import recommend
+from nexcraftviz.spec.model import Spec
+
+#: Default canvas. `container` lets a tile size it; the height is explicit
+#: because Vega-Lite has no equivalent for vertical fill.
+DEFAULT_WIDTH: str | int = "container"
+DEFAULT_HEIGHT = 240
+
+#: Beyond this many categories a vertical bar chart's labels collide, so the
+#: bars go horizontal instead.
+HORIZONTAL_BAR_THRESHOLD = 6
+
+#: Measures that are already a rate or a share must not be summed — adding four
+#: regions' completion percentages together produces a meaningless 340%.
+_NON_ADDITIVE = ("pct", "percent", "rate", "ratio", "avg", "average", "mean",
+                 "median", "score", "index")
+
+
+class BuildError(ValueError):
+    """Raised when no chart can be built for the data given."""
+
+
+def columns_mentioned(question: str, profile: DataProfile) -> list[str]:
+    """Column names the question refers to.
+
+    "revenue by region" over a result that also has an `orders` column should
+    chart revenue, not both. Without this the shape rules see two measures and
+    reasonably build a grouped bar answering a question nobody asked.
+
+    Matching is on word boundaries against the raw name and its humanised form,
+    so `completion_pct` matches "completion pct" but `order` does not match
+    "reorder".
+    """
+    import re
+
+    if not question:
+        return []
+    lowered = f" {question.lower()} "
+    hits: list[str] = []
+    for column in profile.columns:
+        variants = {
+            column.name.lower(),
+            column.name.lower().replace("_", " "),
+            _humanise(column.name).lower(),
+        }
+        if any(re.search(rf"\b{re.escape(v)}\b", lowered) for v in variants if len(v) > 2):
+            hits.append(column.name)
+    return hits
+
+
+def narrow_to(profile: DataProfile, names: list[str]) -> DataProfile:
+    """A profile restricted to ``names``, keeping the original order.
+
+    Only narrows within a role: a question naming one measure should not also
+    discard the dimension it is grouped by.
+    """
+    if not names:
+        return profile
+    wanted = set(names)
+    kept = []
+    for column in profile.columns:
+        role_peers = [c for c in profile.columns if c.role == column.role]
+        mentioned_in_role = [c for c in role_peers if c.name in wanted]
+        if not mentioned_in_role or column.name in wanted:
+            kept.append(column)
+    if not kept:
+        return profile
+    narrowed = DataProfile(columns=kept, row_count=profile.row_count,
+                           truncated=profile.truncated)
+    return narrowed
+
+
+def build_chart(
+    rows: list[dict[str, Any]],
+    *,
+    chart_type: str = "",
+    question: str = "",
+    profile: DataProfile | None = None,
+    title: str = "",
+) -> Spec:
+    """Build a chart for ``rows``.
+
+    ``chart_type`` forces one; otherwise the rules pick. Raises
+    :class:`BuildError` rather than returning something meaningless when the
+    data cannot support a chart — an empty chart is worse than an honest error.
+    """
+    if not rows:
+        raise BuildError("no rows to chart")
+
+    profile = profile or profile_rows(rows)
+    profile = narrow_to(profile, columns_mentioned(question, profile))
+    if not chart_type:
+        ranked = recommend(profile, question=question)
+        chart_type = ranked.best.chart_type if ranked.best else ""
+    if not chart_type:
+        raise BuildError("no chart type could be determined for this data")
+
+    # A KPI is not a Vega chart, but it is a real answer — the one-row case
+    # would otherwise fail on the most basic question there is ("what is my
+    # total?"). It returns a Spec of family `kpi`, which the renderers handle.
+    if chart_type == "kpi":
+        return _kpi(profile, rows, title=title)
+
+    builder = _BUILDERS.get(chart_type)
+    if builder is None:
+        raise BuildError(
+            f"no deterministic builder for {chart_type!r}; "
+            f"available: {', '.join(sorted(_BUILDERS))}"
+        )
+
+    spec = builder(profile)
+    spec["data"] = {"values": list(rows)}
+    spec.setdefault("width", DEFAULT_WIDTH)
+    spec.setdefault("height", DEFAULT_HEIGHT)
+    spec["$schema"] = "https://vega.github.io/schema/vega-lite/v5.json"
+    if title:
+        spec["title"] = title
+    return Spec(spec)
+
+
+# ---------------------------------------------------------------------------
+# field selection
+# ---------------------------------------------------------------------------
+
+def _measure(profile: DataProfile) -> ColumnProfile:
+    measures = profile.measures
+    if not measures:
+        raise BuildError("this data has no measure to plot")
+    return measures[0]
+
+def _dimension(profile: DataProfile) -> ColumnProfile:
+    dimensions = profile.dimensions
+    if not dimensions:
+        raise BuildError("this data has no dimension to group by")
+    return dimensions[0]
+
+
+def _aggregate_for(column: ColumnProfile) -> str | None:
+    """How to combine repeated values for this measure.
+
+    ``None`` means "do not aggregate" — for a result that is already one row
+    per category, summing is a no-op, but for a rate it would be actively
+    wrong, so a mean is used instead of a sum.
+    """
+    lowered = column.name.lower()
+    if any(hint in lowered for hint in _NON_ADDITIVE):
+        return "mean"
+    return "sum"
+
+
+def _quantitative(column: ColumnProfile, *, aggregate: bool = True) -> dict[str, Any]:
+    definition: dict[str, Any] = {"field": column.name, "type": "quantitative"}
+    if aggregate:
+        operation = _aggregate_for(column)
+        if operation:
+            definition["aggregate"] = operation
+    definition["axis"] = {"title": _humanise(column.name)}
+    return definition
+
+
+def _categorical(column: ColumnProfile, *, sort: Any = None) -> dict[str, Any]:
+    definition: dict[str, Any] = {
+        "field": column.name,
+        "type": column.vega_type if column.vega_type in ("nominal", "ordinal") else "nominal",
+        "axis": {"title": None},
+    }
+    if sort is not None:
+        definition["sort"] = sort
+    return definition
+
+
+def _temporal(column: ColumnProfile) -> dict[str, Any]:
+    return {"field": column.name, "type": "temporal", "axis": {"title": None}}
+
+
+# ---------------------------------------------------------------------------
+# builders
+# ---------------------------------------------------------------------------
+
+def _kpi(profile: DataProfile, rows: list[dict[str, Any]], *, title: str = "") -> Spec:
+    """A single headline number, for a result that is one row."""
+    from nexcraftviz.table import KpiCard
+
+    measure = _measure(profile)
+    value = rows[0].get(measure.name)
+    if not isinstance(value, (int, float)):
+        raise BuildError(f"{measure.name!r} is not a number to headline")
+
+    lowered = measure.name.lower()
+    unit = "%" if any(hint in lowered for hint in ("pct", "percent", "rate")) else ""
+    return KpiCard(
+        chart_subtype="percentage" if unit else "counter",
+        label=title or _humanise(measure.name),
+        value=value,
+        unit=unit,
+    ).to_spec()
+
+def _bar(profile: DataProfile) -> dict[str, Any]:
+    dimension, measure = _dimension(profile), _measure(profile)
+    horizontal = dimension.distinct > HORIZONTAL_BAR_THRESHOLD or _long_labels(dimension)
+
+    if horizontal:
+        return {
+            "mark": "bar",
+            "encoding": {
+                "y": _categorical(dimension, sort="-x"),
+                "x": _quantitative(measure),
+            },
+        }
+    return {
+        "mark": "bar",
+        "encoding": {
+            "x": _categorical(dimension, sort="-y"),
+            "y": _quantitative(measure),
+        },
+    }
+
+
+def _line(profile: DataProfile) -> dict[str, Any]:
+    axis = profile.time_axis
+    measure = _measure(profile)
+    if axis is None:
+        # A trend without a time axis is an ordered category — still a line,
+        # but say so with `ordinal` rather than pretending it is a date.
+        dimension = _dimension(profile)
+        return {
+            "mark": {"type": "line", "point": True},
+            "encoding": {
+                "x": {"field": dimension.name, "type": "ordinal", "axis": {"title": None}},
+                "y": _quantitative(measure, aggregate=False),
+            },
+        }
+    return {
+        "mark": {"type": "line", "point": True},
+        "encoding": {"x": _temporal(axis), "y": _quantitative(measure)},
+    }
+
+
+def _multi_line(profile: DataProfile) -> dict[str, Any]:
+    spec = _line(profile)
+    dimensions = [d for d in profile.dimensions if d.name != spec["encoding"]["x"].get("field")]
+    if dimensions:
+        spec["encoding"]["color"] = {
+            "field": dimensions[0].name,
+            "type": "nominal",
+            "legend": {"title": _humanise(dimensions[0].name)},
+        }
+    return spec
+
+
+def _area(profile: DataProfile) -> dict[str, Any]:
+    spec = _line(profile)
+    spec["mark"] = {"type": "area", "line": True, "opacity": 0.4}
+    return spec
+
+
+def _fold_measures(profile: DataProfile) -> dict[str, Any] | None:
+    """Turn several measures into one series, so they can share an axis.
+
+    "Revenue and orders by region" has one dimension and two measures. Neither
+    a plain bar (which can only show one) nor a two-dimension grouped bar
+    (there is no second dimension) fits — the measures themselves have to
+    become the series, which is what `fold` is for.
+    """
+    measures = profile.measures
+    if len(measures) < 2 or not profile.dimensions:
+        return None
+    return {
+        "transform": [{"fold": [m.name for m in measures], "as": ["measure", "amount"]}],
+        "series_field": "measure",
+        "value_field": "amount",
+    }
+
+
+def _grouped_bar(profile: DataProfile) -> dict[str, Any]:
+    dimensions = profile.dimensions
+
+    # One dimension and several measures: fold the measures into the series
+    # rather than quietly building a plain bar and calling it grouped.
+    if len(dimensions) < 2:
+        folded = _fold_measures(profile)
+        if folded is None:
+            raise BuildError("a grouped bar needs two dimensions, or two measures to fold")
+        return {
+            "transform": folded["transform"],
+            "mark": "bar",
+            "encoding": {
+                "x": _categorical(dimensions[0]),
+                "y": {"field": folded["value_field"], "type": "quantitative",
+                      "stack": None, "axis": {"title": None}},
+                "xOffset": {"field": folded["series_field"], "type": "nominal"},
+                "color": {"field": folded["series_field"], "type": "nominal",
+                          "legend": {"title": None}},
+            },
+        }
+
+    measure = _measure(profile)
+    primary, secondary = dimensions[0], dimensions[1]
+    return {
+        "mark": "bar",
+        "encoding": {
+            "x": _categorical(primary),
+            "y": {**_quantitative(measure), "stack": None},
+            "xOffset": {"field": secondary.name, "type": "nominal"},
+            "color": {"field": secondary.name, "type": "nominal",
+                      "legend": {"title": _humanise(secondary.name)}},
+        },
+    }
+
+
+def _stacked_bar(profile: DataProfile) -> dict[str, Any]:
+    dimensions = profile.dimensions
+    if len(dimensions) < 2:
+        folded = _fold_measures(profile)
+        if folded is None:
+            raise BuildError("a stacked bar needs two dimensions, or two measures to fold")
+        return {
+            "transform": folded["transform"],
+            "mark": "bar",
+            "encoding": {
+                "x": _categorical(dimensions[0]),
+                "y": {"field": folded["value_field"], "type": "quantitative",
+                      "stack": "zero", "axis": {"title": None}},
+                "color": {"field": folded["series_field"], "type": "nominal",
+                          "legend": {"title": None}},
+            },
+        }
+
+    measure = _measure(profile)
+    return {
+        "mark": "bar",
+        "encoding": {
+            "x": _categorical(dimensions[0]),
+            "y": {**_quantitative(measure), "stack": "zero"},
+            "color": {"field": dimensions[1].name, "type": "nominal",
+                      "legend": {"title": _humanise(dimensions[1].name)}},
+        },
+    }
+
+
+def _heatmap(profile: DataProfile) -> dict[str, Any]:
+    dimensions, measure = profile.dimensions, _measure(profile)
+    if len(dimensions) < 2:
+        raise BuildError("a heatmap needs two dimensions")
+    return {
+        "mark": "rect",
+        "encoding": {
+            "x": _categorical(dimensions[0]),
+            "y": _categorical(dimensions[1]),
+            "color": {**_quantitative(measure), "legend": {"title": _humanise(measure.name)}},
+        },
+    }
+
+
+def _scatter(profile: DataProfile) -> dict[str, Any]:
+    measures = profile.measures
+    if len(measures) < 2:
+        raise BuildError("a scatter plot needs two measures")
+    spec: dict[str, Any] = {
+        "mark": {"type": "point", "filled": True},
+        "encoding": {
+            "x": _quantitative(measures[0], aggregate=False),
+            "y": _quantitative(measures[1], aggregate=False),
+        },
+    }
+    if profile.dimensions:
+        spec["encoding"]["color"] = {
+            "field": profile.dimensions[0].name, "type": "nominal",
+            "legend": {"title": _humanise(profile.dimensions[0].name)},
+        }
+    return spec
+
+
+def _bubble(profile: DataProfile) -> dict[str, Any]:
+    spec = _scatter(profile)
+    measures = profile.measures
+    if len(measures) >= 3:
+        spec["encoding"]["size"] = _quantitative(measures[2], aggregate=False)
+    return spec
+
+
+def _histogram(profile: DataProfile) -> dict[str, Any]:
+    measure = _measure(profile)
+    return {
+        "mark": "bar",
+        "encoding": {
+            "x": {"field": measure.name, "type": "quantitative",
+                  "bin": {"maxbins": 20}, "axis": {"title": _humanise(measure.name)}},
+            "y": {"aggregate": "count", "type": "quantitative",
+                  "axis": {"title": "Count"}},
+        },
+    }
+
+
+def _boxplot(profile: DataProfile) -> dict[str, Any]:
+    measure = _measure(profile)
+    spec: dict[str, Any] = {
+        "mark": {"type": "boxplot", "extent": "min-max"},
+        "encoding": {"y": _quantitative(measure, aggregate=False)},
+    }
+    if profile.dimensions:
+        spec["encoding"]["x"] = _categorical(profile.dimensions[0])
+    return spec
+
+
+def _donut(profile: DataProfile) -> dict[str, Any]:
+    dimension, measure = _dimension(profile), _measure(profile)
+    return {
+        "mark": {"type": "arc", "innerRadius": 60},
+        "encoding": {
+            "theta": {**_quantitative(measure), "stack": True},
+            "color": {"field": dimension.name, "type": "nominal",
+                      "legend": {"title": _humanise(dimension.name)}},
+        },
+        "height": 240,
+    }
+
+
+def _pie(profile: DataProfile) -> dict[str, Any]:
+    spec = _donut(profile)
+    spec["mark"] = {"type": "arc"}
+    return spec
+
+
+_BUILDERS = {
+    "bar": _bar,
+    "line": _line,
+    "multi_line": _multi_line,
+    "area": _area,
+    "grouped_bar": _grouped_bar,
+    "stacked_bar": _stacked_bar,
+    "heatmap": _heatmap,
+    "scatter": _scatter,
+    "bubble": _bubble,
+    "histogram": _histogram,
+    "boxplot": _boxplot,
+    "donut": _donut,
+    "pie": _pie,
+}
+
+#: `kpi` is buildable but not through `_BUILDERS` — it produces a different
+#: family, so it is handled before the table lookup.
+_SPECIAL = ("kpi",)
+
+BUILDABLE: tuple[str, ...] = tuple(sorted((*_BUILDERS, *_SPECIAL)))
+
+
+def build_best(
+    rows: list[dict[str, Any]], *, question: str = "", title: str = ""
+) -> tuple[Spec, str]:
+    """Build the highest-ranked chart this module can actually construct.
+
+    The recommender knows about chart types with no deterministic builder —
+    ``kpi``, ``funnel``, ``table_with_cells``. Falling down the ranking is
+    better than refusing, and the returned type says what was built.
+    """
+    profile = narrow_to(profile_rows(rows), columns_mentioned(question, profile_rows(rows)))
+    for candidate in recommend(profile, question=question):
+        if candidate.chart_type not in BUILDABLE:
+            continue
+        try:
+            return build_chart(
+                rows, chart_type=candidate.chart_type, profile=profile, title=title
+            ), candidate.chart_type
+        except BuildError:
+            continue
+    raise BuildError("no buildable chart type suits this data")
+
+
+def _long_labels(column: ColumnProfile) -> bool:
+    return any(len(str(value)) > 12 for value in column.sample_values[:5])
+
+
+def _humanise(name: str) -> str:
+    import re
+
+    spaced = re.sub(r"(?<!^)(?=[A-Z])", " ", name).replace("_", " ").replace("-", " ")
+    collapsed = " ".join(spaced.split())
+    return collapsed[:1].upper() + collapsed[1:] if collapsed else name
