@@ -60,7 +60,8 @@ in the loop, and undoable — every edit returns its own inverse patch.
 | `app` + `embed` | HTTP API and a `<nexcraftviz-chat>` custom element |
 | `harness/` | check / setup / run / report — is this environment able to run? |
 
-BI export (PowerBI, Tableau) is the remaining milestone; see `docs/`.
+Remaining milestones: BI export (PowerBI, Tableau), and dashboard generation —
+designed in [docs/DASHBOARDS.md](docs/DASHBOARDS.md), not yet built.
 
 ## Choosing the chart
 
