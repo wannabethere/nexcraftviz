@@ -52,12 +52,101 @@ in the loop, and undoable — every edit returns its own inverse patch.
 | `recommend.build` | An explicit builder, kept out of the flow — for fixtures and baselines |
 | `compose` | Two ways to combine charts, plus placement operations with undo |
 | `skills` | The portable contract: render_prompt / parse / apply, prompts as data |
-| `agent` | The conversation — routing, sessions, undo, in either execution mode |
+| `agents` | Roles, swappable implementations, stage artifacts, telemetry |
+| `pipeline` | plan → generate → evaluate → deliver, as a declared sequence |
+| `evaluate` | Five deterministic gates, then an LLM critic — cheapest first |
+| `session` | The conversation — routing, sessions, undo, in either execution mode |
 | `integrations` | Agent tools, an MCP server, and a Claude Code skill package |
 | `app` + `embed` | HTTP API and a `<nexcraftviz-chat>` custom element |
+| `harness/` | check / setup / run / report — is this environment able to run? |
 
-Skills, corpus retrieval, composition and BI export land in subsequent
-milestones; see `docs/`.
+BI export (PowerBI, Tableau) is the remaining milestone; see `docs/`.
+
+## The pipeline
+
+```
+plan → generate → evaluate ─(fail, once)→ generate → deliver
+```
+
+Separating the decision from the drawing is the point. A plan can be shown to a
+user, cached, diffed, overridden or hand-written; a finished Vega-Lite document
+cannot. And once they are separate, the evaluator can check the generator
+against the plan — a check that simply does not exist when one call does both.
+
+```python
+from nexcraftviz.pipeline import ChartRequest, run_pipeline
+
+run = await run_pipeline(
+    ChartRequest(question="Which region brought in the most revenue?", rows=rows),
+    llm=my_runner,
+)
+run.stages.plan          # the decision, with the rejected alternatives
+run.stages.evaluate      # every gate, and the critic's verdict if asked for
+run.spec                 # the chart
+```
+
+The sequence is declared, not hardcoded control flow, so a caller can stop after
+the plan for a review gate (`stop_after="plan"`), skip evaluation
+(`evaluate="off"`), or buy the critic as well (`evaluate="full"`).
+
+A regex extractor runs before the planner for what the question says outright —
+"as a line chart", "top 10", "by month", "in dark mode". It applies as a *floor,
+not a ceiling*: where the model made a call it wins. The common phrasings cost
+no tokens, and more usefully they are stable across runs.
+
+### Evaluation
+
+Cheapest first. Five deterministic gates run free:
+
+| Gate | Catches |
+|---|---|
+| `validates` | an encoding naming a column that does not exist |
+| `renders` | a spec that compiles and draws a blank canvas |
+| `matches_plan` | the generator quietly ignoring the plan |
+| `no_baked_styling` | a hard-coded `mark.color` that will defeat the theme |
+| `data_honesty` | a rate summed; a quarter label encoded as temporal |
+
+The LLM critic is asked only when those are clean — paying a model to opine on
+a chart that does not render is waste. A failure buys **exactly one**
+regeneration with the specific complaint attached, then the chart is delivered
+with the verdict on it. Not a loop: an unbounded retry burns money and, in
+practice, converges on the same answer.
+
+### Swapping a role
+
+```python
+registry = AgentRegistry.default()
+registry.override("planner", MyPlanner())    # the pipeline uses it
+```
+
+Eight roles: planner, generator, evaluator, critic, deliverer, editor, placer,
+narrator. The built-ins wrap the skills rather than reimplementing them, so a
+user hits the same code whichever door they came through.
+
+Model tiers resolve through the same chain genieml uses, so one environment
+configures both stacks:
+
+```
+fast  : NEXCRAFTVIZ_FAST_MODEL  → OPENAI_MODEL → gpt-5-mini
+smart : NEXCRAFTVIZ_SMART_MODEL → OPENAI_MODEL → gpt-5-mini
+```
+
+The tier is declared on the agent **and** in the prompt's own `# model_tier:`
+header, with a test asserting the two agree.
+
+## Is this thing set up?
+
+```bash
+nexcraftviz harness check      # every prerequisite, and how to fix each one
+nexcraftviz harness setup      # scaffold .env; print what is left for a human
+nexcraftviz harness run        # the scenarios, end to end — offline by default
+nexcraftviz harness report     # the last run, or --compare two of them
+```
+
+`check` exists because a missing font makes PNG text render subtly wrong with no
+error at all, and a missing key surfaces three steps later as a 401. `run` calls
+no model unless you pass `--live`, and says plainly that an offline run graded
+the wiring and not any prompt. See [harness/README.md](harness/README.md).
 
 ## Validation, and why tier 2 matters
 

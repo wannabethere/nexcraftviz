@@ -238,7 +238,7 @@ Prompts live in `nexcraftviz/prompts/*.txt` with a manifest, overridable via
 Two skills need no model at all (`viz.recommend`, `viz.theme`), which is the
 point: a host that calls them pays nothing and gets the same answer every time.
 
-### `agent` — the conversation, in two modes
+### `session` — the conversation, in two modes
 
 ```
 propose(message) → prompt + schema     # host runs its own model
@@ -256,6 +256,64 @@ wording: an edit instruction with nothing to edit is a request to create.
 
 Undo is free: skills return inverse patches, so the session keeps a stack of
 those rather than snapshotting documents.
+
+`Session(pipeline=True)` routes a *new chart* through the staged pipeline
+instead of straight to `viz.generate`. Editing is deliberately unaffected: an
+edit names the change and the chart already exists, so planning it again would
+be a second model call that decides nothing.
+
+`propose()` raises rather than degrading in that mode — a pipeline turn is
+several model calls with a decision between them, so it cannot honestly be
+handed back as one prompt. A host driving `run_pipeline` itself calls
+`adopt_run(run)` and lands in exactly the same session state.
+
+### `agents` — roles, not subclasses
+
+A *role* is a job in the pipeline; an *agent* is something that does it. Keeping
+them separate is the whole point: a host with their own planner registers it
+against the `planner` role, with no fork and no subclassing.
+
+This sits **above** `skills`, which stays the skill-level surface for MCP and
+tool-calling. A skill is a unit of work; an agent is a participant in a run. The
+built-ins are thin wrappers over the skills, so there is one implementation of
+each behaviour — if an agent re-implemented its skill, the MCP tool and the
+pipeline would drift, and the version a user hit would depend on which door they
+came through.
+
+Each stage writes one slot on `ChartStages` and the next reads it, failing loud
+when it is empty. The artifact *is* the interface, which is what lets a stage be
+replaced, cached, hand-written or reviewed without touching its neighbours.
+
+Two conventions taken from cp2 because they earn their keep there: **status on
+the artifact rather than an exception** (a planner that cannot plan returns
+`insufficient_data` with a reason, so the caller decides rather than catches),
+and **a uniform telemetry block** on every stage, so cost and latency are
+attributable per stage rather than per turn.
+
+One convention explicitly *not* inherited: cp2 has a `# model_tier:` header in
+every prompt that nothing parses, alongside a hardcoded model pick at each call
+site. A header nobody reads drifts from reality and then misleads whoever reads
+it next. Ours is parsed, a test asserts it agrees with the agent spec, and
+`load_prompt` strips the metadata block before the text reaches a model — so a
+bookkeeping edit cannot quietly change what the model is asked.
+
+### `evaluate` — deterministic gates, then an opinion
+
+The same shape as validation, for the same reason: the cheap checks catch the
+failures that actually happen, and they cost nothing to run every time. A model
+asked "is this chart good?" will discuss the colour scheme while the chart
+renders a blank canvas.
+
+Every gate exists because of a specific failure seen in this codebase, and each
+has a test feeding it that exact failure. A gate that cannot fail is worse than
+no gate — it converts an untested path into a green tick.
+
+Two design details worth keeping:
+
+* Gate **names are declared**, not read off `__name__`. A gate that reports its
+  own function's name reports the wrapper's name the first time anyone wraps one.
+* A gate that **raises** is recorded as passing, with the exception in its
+  detail. A bug in a gate is not evidence about the chart.
 
 ### `integrations` — three front doors, one implementation
 
