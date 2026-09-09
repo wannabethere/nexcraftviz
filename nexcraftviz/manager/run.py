@@ -142,21 +142,41 @@ async def run_instruction(
 
 
 async def _run_step(step: ManagerStep, *, session: Session, llm: Any) -> StepOutcome:
+    """Dispatch one step to the agent registered for its role.
+
+    Through the **registry**, not straight to a skill. A host that overrides the
+    `editor` role has to see that override in the instruction box as well as in
+    the conversation; going direct would mean the two disagree, and nobody finds
+    that out until it has already confused someone.
+    """
     if step.action == "recreate":
         return await _recreate(step, session=session, llm=llm)
+    if step.action == "widget":
+        return await _build_widget(step, session=session, llm=llm)
 
-    skill = step.skill
-    if not skill:
-        return StepOutcome(step=step, ok=False, detail=f"no skill for {step.action!r}")
+    if not step.role:
+        return StepOutcome(step=step, ok=False, detail=f"no role for {step.action!r}")
 
     try:
-        turn = await session.turn(step.instruction, llm=llm, skill=skill)
+        registry = _registry(session)
+        agent = registry.get(step.role)
+        result = await agent.run(_context(step, session=session, llm=llm))
     except Exception as exc:  # noqa: BLE001
         # Deliberately broad. A model runner is somebody else's code and can
         # raise anything — a timeout, a provider error, a bad response. Steps
         # are isolated on purpose, so one falling over must not take the
         # others with it. Nothing is swallowed: it lands in run.failures().
         return StepOutcome(step=step, ok=False, detail=f"{type(exc).__name__}: {exc}")
+
+    # The session keys undo and history on the skill name, so the turn is
+    # recorded against the skill the role stands for — an overridden role lands
+    # in the same history a built-in one would.
+    turn = session.adopt_result(
+        agent.spec.skill or step.skill,
+        result,
+        message=step.instruction,
+        theme=_theme_for(step, session),
+    )
 
     if step.action == "narrate":
         # Narration is the one action that produces something to render rather
@@ -167,6 +187,119 @@ async def _run_step(step: ManagerStep, *, session: Session, llm: Any) -> StepOut
         )
     detail = turn.reply if turn.ok else "; ".join(r for _, r in turn.failed)
     return StepOutcome(step=step, ok=turn.ok, detail=detail)
+
+
+def _registry(session: Session) -> Any:
+    from nexcraftviz.agents import AgentRegistry
+
+    if session.registry is None:
+        session.registry = AgentRegistry.default()
+    return session.registry
+
+
+def _context(step: ManagerStep, *, session: Session, llm: Any) -> Any:
+    """What a role needs to do its job, whichever role it is."""
+    from nexcraftviz.agents.registry import StageContext
+
+    return StageContext(
+        question=step.instruction,
+        rows=session.rows,
+        language=session.language,
+        theme=session.theme,
+        llm=llm,
+        options={
+            "spec": session.document if session.has_chart else None,
+            "widget": session.document if session.has_widget else None,
+            "theme": _theme_for(step, session),
+        },
+    )
+
+
+def _theme_for(step: ManagerStep, session: Session) -> str:
+    """The theme a `theme` step is asking for.
+
+    Reuses the session's own reader, so "make it dark" means the same thing here
+    as it does in a conversation.
+    """
+    if step.action != "theme":
+        return ""
+    from nexcraftviz.session.session import _theme_from
+
+    return _theme_from(step.instruction, session.theme)
+
+
+async def _build_widget(step: ManagerStep, *, session: Session, llm: Any) -> StepOutcome:
+    """Several charts, then an arrangement.
+
+    The order is the point. Each chart is planned, generated and gated on its
+    own; only then is the composer asked where things go, and it is shown the
+    **visualisations** rather than the rows. Composing from data instead would
+    mean choosing a layout for charts that do not exist yet, and then either
+    re-deriving them or hoping they come out as imagined.
+    """
+    from nexcraftviz.pipeline import ChartRequest, run_pipeline
+    from nexcraftviz.skills.compose import Visualization, build_widget
+
+    asks = step.parts or [step.instruction]
+    registry = _registry(session)
+
+    visualizations: list[Visualization] = []
+    problems: list[str] = []
+    for index, ask in enumerate(asks):
+        try:
+            run = await run_pipeline(
+                ChartRequest(question=ask, rows=session.rows,
+                             language=session.language, theme=session.theme),
+                llm=llm, registry=registry,
+            )
+        except Exception as exc:  # noqa: BLE001 — one chart failing is not the widget failing
+            problems.append(f"{ask}: {type(exc).__name__}: {exc}")
+            continue
+        if run.spec is None:
+            problems.append(f"{ask}: {run.reason or 'no chart'}")
+            continue
+        visualizations.append(Visualization(
+            id=f"tile_{index + 1}",
+            spec=run.spec,
+            chart_type=run.stages.generate.chart_type if run.stages.generate else "",
+            question=ask,
+        ))
+
+    if not visualizations:
+        return StepOutcome(step=step, ok=False,
+                           detail="; ".join(problems) or "no charts could be built")
+
+    context = _context(step, session=session, llm=llm)
+    context.options["visualizations"] = visualizations
+    from nexcraftviz.compose.widget import Widget
+
+    existing = session.document if isinstance(session.document, Widget) else None
+    context.options["existing"] = (
+        [{"id": t.id, "title": t.title, "family": t.family} for t in existing.tiles]
+        if existing is not None else []
+    )
+
+    try:
+        result = await registry.get("composer").run(context)
+    except Exception as exc:  # noqa: BLE001
+        return StepOutcome(step=step, ok=False, detail=f"{type(exc).__name__}: {exc}")
+
+    design = result.value
+    if design is None or not design.ok:
+        return StepOutcome(
+            step=step, ok=False,
+            detail=(design.reason_if_not_ok if design else "") or "no widget design",
+        )
+
+    session.document = build_widget(design, visualizations)
+    # A widget replaces the document outright rather than editing it, so there
+    # is no inverse patch that could reconstruct what was there before.
+    session.clear_history()
+
+    detail = f"{design.layout} of {len(design.tiles)} chart(s)"
+    if problems:
+        detail += f"; could not build: {'; '.join(problems)}"
+    return StepOutcome(step=step, ok=True, detail=detail)
 
 
 async def _recreate(step: ManagerStep, *, session: Session, llm: Any) -> StepOutcome:

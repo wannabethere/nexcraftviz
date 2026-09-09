@@ -196,6 +196,14 @@ def _inputs_for(name: str) -> dict:
         return {"question": "revenue by region", "rows": ROWS}
     if name == "viz.critique":
         return {"question": "revenue by region", "spec": CHART, "rows": ROWS}
+    if name == "viz.compose":
+        return {
+            "ask": "a dashboard of revenue and orders",
+            "visualizations": [
+                {"id": "tile_1", "spec": CHART, "chart_type": "bar",
+                 "question": "revenue by region"},
+            ],
+        }
     if name == "viz.manage":
         return {"instruction": "make it dark and sort descending", "spec": CHART,
                 "rows": ROWS}

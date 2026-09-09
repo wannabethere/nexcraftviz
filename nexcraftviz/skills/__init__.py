@@ -13,6 +13,7 @@ from nexcraftviz.skills.base import (
     SkillSpec,
     load_prompt,
 )
+from nexcraftviz.skills.compose import ComposeSkill
 from nexcraftviz.skills.create import (
     GenerateSkill,
     NarrateSkill,
@@ -35,6 +36,7 @@ REGISTRY: dict[str, Skill] = {
         CritiqueSkill(),
         EditSkill(),
         PlaceSkill(),
+        ComposeSkill(),
         NarrateSkill(),
         ThemeSkill(),
     )
@@ -57,6 +59,7 @@ def names() -> list[str]:
 
 __all__ = [
     "REGISTRY",
+    "ComposeSkill",
     "CritiqueSkill",
     "EditSkill",
     "GenerateSkill",

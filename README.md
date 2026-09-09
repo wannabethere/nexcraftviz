@@ -177,6 +177,31 @@ Declining is a first-class outcome. nexcraftviz cannot run a query, so anything
 needing data the rows do not contain comes back with a reason instead of a chart
 that answers a question nobody asked.
 
+Each step is dispatched to the **role** registered for it, not to a skill
+directly — so `registry.override("editor", MyEditor())` changes the instruction
+box as well as the conversation.
+
+### Widgets
+
+"A dashboard of revenue by region and headcount over time" is one instruction
+naming two charts. It becomes a single `widget` step whose parts are built
+first — each planned, generated and gated on its own — and only then arranged:
+
+```
+parts → run_pipeline per chart → viz.compose → Widget
+```
+
+The composer is shown the **visualizations, not the rows**: id, chart type,
+family, encoded fields, and the question each answers. By then the charts have
+already passed their gates, so the only open question is layout — and handing
+over the data as well would invite it to relitigate work it has no way to do
+better. The spec itself is withheld too, because a composer given a Vega-Lite
+document starts editing encodings.
+
+A widget comes back under `widget` rather than `chart_schema`: the arrangement,
+rendered markup, and `{tileId: spec}` beside it, because a `<script>` inserted
+through `innerHTML` never executes.
+
 ## Is this thing set up?
 
 ```bash

@@ -18,6 +18,10 @@ prompts:
     file: viz.manage.txt
     version: 1
     output: ManagerDecision
+  viz.compose:
+    file: viz.compose.txt
+    version: 1
+    output: WidgetDesign
   viz.edit:
     file: viz.edit.txt
     version: 1

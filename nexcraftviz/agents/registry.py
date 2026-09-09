@@ -28,12 +28,12 @@ if TYPE_CHECKING:  # pragma: no cover
 
 Role = Literal[
     "manager", "planner", "generator", "evaluator", "critic", "deliverer",
-    "editor", "placer", "narrator",
+    "editor", "themer", "placer", "composer", "narrator",
 ]
 
 ROLES: tuple[Role, ...] = (
     "manager", "planner", "generator", "evaluator", "critic", "deliverer",
-    "editor", "placer", "narrator",
+    "editor", "themer", "placer", "composer", "narrator",
 )
 
 Tier = Literal["fast", "smart"]

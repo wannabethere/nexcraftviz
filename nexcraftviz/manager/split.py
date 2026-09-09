@@ -19,7 +19,7 @@ wrong skill, which is worse than paying for one call.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from nexcraftviz.manager.decision import Action
 
@@ -50,6 +50,33 @@ _OUT_OF_SCOPE: tuple[tuple[re.Pattern[str], str], ...] = (
      "nexcraftviz builds charts; delivery is the host application's job"),
 )
 
+#: Building a widget — several charts arranged together — rather than editing
+#: one. Checked before the router, because "show me a dashboard of X and Y"
+#: matches the create rule and would otherwise be read as one chart.
+_WIDGET = re.compile(
+    r"\b(dashboard|widget)\b|\bseveral charts?\b|\bmultiple charts?\b"
+    r"|\bside by side\b.*\bchart|\bcombine\b.*\bcharts?\b"
+    r"|\bbreakdown of\b.*\band\b.*\band\b",
+    re.IGNORECASE,
+)
+
+#: Splits a widget ask into the charts it wants. Different from clause
+#: splitting: "revenue by region and headcount over time" is one instruction
+#: naming two charts, not two instructions.
+_WIDGET_PARTS = re.compile(r"\s*(?:,\s*and\s+|,\s*|\s+and\s+|;\s*)", re.IGNORECASE)
+
+#: Stripped from the front of a widget ask before splitting it into charts, so
+#: "a dashboard of X and Y" yields "X" rather than "a dashboard of X".
+_WIDGET_PREAMBLE = re.compile(
+    # The verb is optional: people write "a widget with X and Y" as often as
+    # "build me a widget with X and Y", and leaving the preamble on the first
+    # part turns "a widget with revenue by month" into a chart ask of its own.
+    r"^\s*(?:please\s+)?(?:can you\s+)?"
+    r"(?:(?:build|make|create|show|give|put together)\s+(?:me\s+)?)?"
+    r"(?:a|an|the)?\s*(?:dashboard|widget)\s*(?:of|with|showing|for|containing)?\s*",
+    re.IGNORECASE,
+)
+
 #: Router skill → manager action. `viz.generate` means "start over", which at
 #: this surface is a full re-plan rather than a bare generate call.
 _ACTION_FOR: dict[str, Action] = {
@@ -71,6 +98,8 @@ class LabelledClause:
     #: False when the rules matched nothing specific and fell through to their
     #: default. The model decides those.
     confident: bool = False
+    #: For a `widget` clause: the individual charts it asks for.
+    parts: list[str] = field(default_factory=list)
 
     @property
     def needs_model(self) -> bool:
@@ -115,6 +144,14 @@ def label(
         if pattern.search(text):
             return LabelledClause(text=text, action="decline", why=reason, confident=True)
 
+    # Before the router: a dashboard ask matches the create rule, and reading
+    # "a dashboard of revenue and headcount" as one chart loses half of it.
+    if _WIDGET.search(text) and not _is_layout_only(text, has_widget=has_widget):
+        return LabelledClause(
+            text=text, action="widget", why="asks for several charts together",
+            confident=True, parts=widget_parts(text),
+        )
+
     decision = route(text, has_chart=has_chart, has_widget=has_widget)
     action = _ACTION_FOR.get(decision.skill)
     if action is None:
@@ -134,7 +171,51 @@ def label(
 def label_all(
     message: str, *, has_chart: bool, has_widget: bool
 ) -> list[LabelledClause]:
+    """Label every clause — but check for a widget ask on the whole message first.
+
+    The conjunction in "a dashboard of revenue by region **and** headcount over
+    time" joins two *charts*, not two instructions. Splitting on it first leaves
+    the widget clause holding half the request and the other half read as an
+    edit, which is exactly the failure the manager exists to stop.
+    """
+    text = (message or "").strip()
+    if text and _WIDGET.search(f" {text.lower()} ") and not _is_layout_only(
+        text, has_widget=has_widget
+    ):
+        return [label(text, has_chart=has_chart, has_widget=has_widget)]
+
     return [
         label(clause, has_chart=has_chart, has_widget=has_widget)
         for clause in split_clauses(message)
     ]
+
+
+def widget_parts(message: str) -> list[str]:
+    """The individual charts a widget ask names.
+
+    "a dashboard of revenue by region and headcount over time" is two charts,
+    and each becomes its own planned, generated, gated visualisation before
+    anything is arranged. A single part is a real answer — "build me a
+    dashboard" names one subject and the planner decides the rest.
+    """
+    body = _WIDGET_PREAMBLE.sub("", (message or "").strip())
+    if not body:
+        return []
+    parts = [p.strip(" ,;.") for p in _WIDGET_PARTS.split(body)]
+    # Two words is the floor for a chart ask; below that it is a fragment left
+    # over from an unlucky split.
+    parts = [p for p in parts if len(p.split()) >= 2]
+    return parts or ([body] if body else [])
+
+
+def _is_layout_only(text: str, *, has_widget: bool) -> bool:
+    """"Make the dashboard wider" mentions a widget and rearranges one.
+
+    Only when a widget already exists — with nothing on screen the same words
+    are a request to build one.
+    """
+    if not has_widget:
+        return False
+    return bool(re.search(
+        r"\b(wider|narrower|bigger|smaller|resize|move|reorder|rearrange"
+        r"|full[- ]width|side by side|swap)\b", text, re.IGNORECASE))

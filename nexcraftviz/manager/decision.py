@@ -21,17 +21,37 @@ from nexcraftviz.agents.artifacts import STRICT, Status, Telemetry
 
 #: What a step can ask for. Each maps to something that already exists — the
 #: manager decides, it does not draw.
-Action = Literal["edit", "theme", "narrate", "place", "recreate", "decline"]
+Action = Literal[
+    "edit", "theme", "narrate", "place", "widget", "recreate", "decline"
+]
 
-ACTIONS: tuple[Action, ...] = ("edit", "theme", "narrate", "place", "recreate", "decline")
+ACTIONS: tuple[Action, ...] = (
+    "edit", "theme", "narrate", "place", "widget", "recreate", "decline",
+)
 
-#: action → the skill that carries it out. `recreate` is the whole pipeline
-#: rather than a single skill, and `decline` runs nothing at all.
+#: action → the registry role that carries it out.
+#:
+#: Roles, not skills. Going straight to a skill would mean a host that overrode
+#: the `editor` role changed the conversation and not the instruction box, which
+#: is the kind of split nobody discovers until it has already confused someone.
+#: `recreate` and `widget` run several roles between them and are dispatched
+#: separately; `decline` runs nothing.
+ROLE_FOR: dict[str, str] = {
+    "edit": "editor",
+    "theme": "themer",
+    "narrate": "narrator",
+    "place": "placer",
+    "widget": "composer",
+}
+
+#: action → the skill the built-in role delegates to. Kept for the session
+#: bookkeeping, which keys undo and history on the skill name.
 SKILL_FOR: dict[str, str] = {
     "edit": "viz.edit",
     "theme": "viz.theme",
     "narrate": "viz.narrate",
     "place": "viz.place",
+    "widget": "viz.compose",
 }
 
 
@@ -46,6 +66,17 @@ class ManagerStep(BaseModel):
                     "skill given the whole sentence acts on the wrong half of it.",
     )
     why: str = ""
+    parts: list[str] = Field(
+        default_factory=list,
+        description="For `widget` only: the individual charts the widget should "
+                    "hold, one ask each. A widget is built from finished "
+                    "visualisations, so these are planned and drawn first and "
+                    "the arrangement is decided from what they turned out to be.",
+    )
+
+    @property
+    def role(self) -> str:
+        return ROLE_FOR.get(self.action, "")
 
     @property
     def skill(self) -> str:

@@ -49,6 +49,7 @@ def envelope(
     actions: list[str] | None = None,
     declined: list[str] | None = None,
     degraded: list[str] | None = None,
+    widget: Any = None,
 ) -> dict[str, Any]:
     """One response shape for both calls.
 
@@ -75,6 +76,11 @@ def envelope(
         "chart_schema": schema,
         "reasoning": reasoning,
         "renderer": RENDERER,
+        # A widget is several charts arranged together, so it cannot be squeezed
+        # into `chart_schema`. The markup is rendered here so the tile vocabulary
+        # has one implementation, and the specs travel beside it because a
+        # <script> tag inserted via innerHTML never executes.
+        "widget": _widget_payload(widget),
         # The caller may be charting a sample rather than the whole result set.
         # Saying how many rows were charted lets it say so too.
         "row_count": len(rows),
@@ -242,16 +248,22 @@ async def annotate_chart(
             run.decision.reason_if_not_ok or "the instruction could not be read"
         )
 
-    spec = session.document if session.has_chart else None
-    degraded = run.failures()
+    from nexcraftviz.compose.widget import Widget
+
+    document = session.document
+    spec = document if isinstance(document, Spec) and document else None
+    widget = document if isinstance(document, Widget) else None
+
     return envelope(
-        spec if isinstance(spec, Spec) else None,
+        spec,
         rows=rows,
         reasoning=run.summary(),
+        chart_type="widget" if widget is not None else "",
         narration=run.narration,
         actions=run.actions,
         declined=run.decision.declined,
-        degraded=degraded,
+        degraded=run.failures(),
+        widget=widget,
         verdict=getattr(session.last_run, "stages", None)
         and session.last_run.stages.evaluate,
     ), session
@@ -272,6 +284,21 @@ def _themed(spec: Spec, theme: str) -> Spec:
         # An unknown theme name should not cost the caller their chart.
         return spec
     return result.spec if isinstance(result.spec, Spec) else Spec(result.spec)
+
+
+def _widget_payload(widget: Any) -> dict[str, Any] | None:
+    """A widget, ready to mount: the arrangement, its markup, and its specs."""
+    if widget is None:
+        return None
+    return {
+        "document": widget.to_dict(),
+        "html": widget.to_html(),
+        "specs": widget.chart_specs(),
+        "tiles": [
+            {"id": t.id, "title": t.title, "span": t.span, "family": t.family}
+            for t in widget.tiles
+        ],
+    }
 
 
 def _dump(value: Any) -> Any:

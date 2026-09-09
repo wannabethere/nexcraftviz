@@ -391,6 +391,61 @@ class EditorAgent(SkillAgent):
         return result
 
 
+class ThemerAgent(SkillAgent):
+    """Applying a theme needs no model, and a role for it still earns its place:
+    a host with brand tokens of its own substitutes here."""
+
+    spec = AgentSpec(
+        role="themer",
+        name="builtin.themer",
+        uses_llm=False,
+        skill="viz.theme",
+        summary="Apply a named theme to a chart.",
+    )
+
+    def build_input(self, ctx: StageContext) -> dict[str, Any]:
+        return {
+            "spec": ctx.options.get("spec"),
+            "theme": ctx.options.get("theme") or ctx.theme,
+        }
+
+    async def run(self, ctx: StageContext) -> SkillResult:
+        result, _ = await self.call(ctx)
+        return result
+
+
+class ComposerAgent(SkillAgent):
+    """Finished charts → a widget design.
+
+    Sees visualisations, never rows. By the time it runs each chart has been
+    planned, generated and gated on its own, so the only open question is
+    layout — and handing it the data too would invite it to relitigate charts
+    that have already passed.
+    """
+
+    spec = AgentSpec(
+        role="composer",
+        name="builtin.composer",
+        model_tier="fast",
+        skill="viz.compose",
+        summary="Arrange finished charts into one widget: order, spans, panels, titles.",
+    )
+
+    def build_input(self, ctx: StageContext) -> dict[str, Any]:
+        return {
+            "ask": ctx.question,
+            "visualizations": ctx.options.get("visualizations") or [],
+            "existing": ctx.options.get("existing") or [],
+            "language": ctx.language,
+        }
+
+    async def run(self, ctx: StageContext) -> SkillResult:
+        result, telemetry = await self.call(ctx)
+        if result.value is not None:
+            result.value.telemetry = telemetry
+        return result
+
+
 class PlacerAgent(SkillAgent):
     spec = AgentSpec(
         role="placer",
@@ -442,7 +497,8 @@ class NarratorAgent(SkillAgent):
 
 _BUILTINS: tuple[type, ...] = (
     ManagerAgent, PlannerAgent, GeneratorAgent, EvaluatorAgent, CriticAgent,
-    DelivererAgent, EditorAgent, PlacerAgent, NarratorAgent,
+    DelivererAgent, EditorAgent, ThemerAgent, PlacerAgent, ComposerAgent,
+    NarratorAgent,
 )
 
 

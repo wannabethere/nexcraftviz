@@ -27,6 +27,9 @@ A JSON object with:
   narrate   answer a question about what the chart shows, in prose. Nothing is
             redrawn
   place     move, resize, group or reorder tiles. Only when has_widget is true
+  widget    build SEVERAL charts and arrange them together — a dashboard. Fill
+            `parts` with one ask per chart; each is planned and drawn on its own
+            before anything is arranged
   recreate  build a different chart from scratch. Use this when the user wants a
             different question answered, not the current one adjusted
   decline   the instruction cannot be carried out here. Say why in `why`
@@ -49,6 +52,20 @@ question — "show me orders instead" — not when they are refining this one.
 
 `narrate` never redraws. If someone asks "what does this show and can you sort
 it" that is two steps: narrate, then edit.
+
+`widget` is one step, not several. "A dashboard of revenue by region and
+headcount over time" is a single widget step whose `parts` are ["revenue by
+region", "headcount over time"] — the conjunction joins two charts, not two
+instructions. Splitting it into two steps would build two separate charts and
+arrange neither.
+
+Each part is a complete chart ask on its own, because that is how it will be
+read: "headcount over time", not "headcount". If the user names no charts —
+"build me a dashboard" — leave `parts` empty and one will be chosen from the
+data.
+
+`place` and `widget` are different. `place` rearranges tiles that already
+exist; `widget` builds the charts. "Make the dashboard wider" is `place`.
 
 Decline rather than approximate. You cannot run a query, so anything needing
 data that is not in `columns` — a different time period, another table, a column

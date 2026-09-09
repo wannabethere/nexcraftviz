@@ -23,7 +23,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from nexcraftviz.data.profile import profile_rows
 from nexcraftviz.manager.decision import ManagerDecision, ManagerStep
-from nexcraftviz.manager.split import LabelledClause, label_all
+from nexcraftviz.manager.split import LabelledClause, label_all, widget_parts
 from nexcraftviz.skills.base import Skill, SkillResult, SkillSpec
 from nexcraftviz.spec.model import Spec
 
@@ -127,7 +127,7 @@ class ManageSkill(Skill[ManageIn, ManagerDecision]):
 
 def _from_clauses(clauses: list[LabelledClause]) -> ManagerDecision:
     steps = [
-        ManagerStep(action=c.action, instruction=c.text, why=c.why)
+        ManagerStep(action=c.action, instruction=c.text, why=c.why, parts=list(c.parts))
         for c in clauses
         if c.action is not None
     ]
@@ -143,6 +143,13 @@ def _repair(decision: ManagerDecision, inputs: ManageIn) -> ManagerDecision:
     Each of these is a case where the returned decision is well-formed and still
     would not work, so nothing downstream would catch it.
     """
+    for step in decision.steps:
+        # A widget step with no parts builds one chart from the whole sentence,
+        # which for "a dashboard of X and Y" silently drops Y. The rules split
+        # the ask deterministically, so use theirs when the model gave none.
+        if step.action == "widget" and not step.parts:
+            step.parts = widget_parts(step.instruction)
+
     if not decision.steps:
         # A model that returned no steps has said the instruction means nothing,
         # which is rarely true and never useful — the user typed something. The

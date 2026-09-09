@@ -314,12 +314,21 @@ class Session:
             # rather than editing it, and an undo stack entry that cannot
             # reconstruct the previous chart is worse than none.
             self.document = run.spec
-            self._undo.clear()
-            self._redo.clear()
+            self.clear_history()
         self.turns.append(turn)
         return turn
 
     # -- history -----------------------------------------------------------
+
+    def clear_history(self) -> None:
+        """Drop the undo stack.
+
+        For a change that replaces the document outright rather than editing it.
+        An undo entry that cannot reconstruct what was there before is worse
+        than no entry: the button is offered and does the wrong thing.
+        """
+        self._undo.clear()
+        self._redo.clear()
 
     def undo(self) -> bool:
         """Step back one document change. Returns False when there is nothing to undo."""
@@ -367,26 +376,50 @@ class Session:
         return {**base, "instruction": message, "spec": self.document, "rows": self.rows}
 
     def _record(self, proposal: Proposal, result: SkillResult) -> Turn:
-        turn = Turn(
-            id=proposal.turn_id,
+        return self.adopt_result(
+            proposal.skill,
+            result,
             message=str(proposal.inputs.get("instruction")
                         or proposal.inputs.get("question") or ""),
-            skill=proposal.skill,
+            turn_id=proposal.turn_id,
+            theme=proposal.inputs.get("theme", ""),
+        )
+
+    def adopt_result(
+        self,
+        skill: str,
+        result: SkillResult,
+        *,
+        message: str = "",
+        turn_id: str = "",
+        theme: str = "",
+    ) -> Turn:
+        """Fold a skill's result into the session: document, undo, history.
+
+        Public because the manager dispatches through the agent registry rather
+        than calling `turn()` — a host that overrides the `editor` role has to
+        land in the same session state as one that did not, or overriding a role
+        would quietly cost them undo.
+        """
+        turn = Turn(
+            id=turn_id or f"turn_{uuid.uuid4().hex[:8]}",
+            message=message,
+            skill=skill,
             reply=_reply_from(result),
             changes=list(result.changes),
             warnings=list(result.warnings),
             failed=list(result.failed),
         )
 
-        if proposal.skill in _DOCUMENT_SKILLS and result.value is not None:
+        if skill in _DOCUMENT_SKILLS and result.value is not None:
             previous_kind = "widget" if self.has_widget else "chart"
             if isinstance(result.value, (Spec, Widget)):
                 self.document = result.value
                 if result.inverse:
                     self._undo.append((previous_kind, result.inverse))
                     self._redo.clear()
-            if proposal.skill == "viz.theme":
-                self.theme = proposal.inputs.get("theme", self.theme)
+            if skill == "viz.theme" and theme:
+                self.theme = theme
 
         self.turns.append(turn)
         return turn
