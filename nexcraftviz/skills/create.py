@@ -71,12 +71,21 @@ class RecommendSkill(Skill[RecommendIn, RecommendOut]):
 # ---------------------------------------------------------------------------
 
 class GenerateIn(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="forbid")
 
     question: str
     rows: list[dict[str, Any]] = Field(default_factory=list)
     language: str = "English"
     chart_type: str = Field(default="", description="Force a chart type, or leave empty.")
+    plan: Any = Field(
+        default=None,
+        description="A ChartPlan to follow. When present it replaces the "
+                    "recommendations — the decision has already been made.",
+    )
+    complaint: str = Field(
+        default="",
+        description="Why a previous attempt was rejected, for a regeneration.",
+    )
 
 
 class GenerateOut(BaseModel):
@@ -103,20 +112,49 @@ class GenerateSkill(Skill[GenerateIn, GenerateOut]):
 
     def user_payload(self, inputs: GenerateIn) -> str:
         profile = profile_rows(inputs.rows)
-        ranked = rules_recommend(profile, question=inputs.question)
         payload: dict[str, Any] = {
             "question": inputs.question,
             "language": inputs.language,
             "row_count": profile.row_count,
             "profile": profile.to_prompt_dict(),
-            "recommendations": [
+        }
+
+        if inputs.plan is not None:
+            # A plan supersedes the recommendations: the decision is made, and
+            # offering a competing ranking invites the generator to relitigate
+            # it, which is exactly what separating the stages was meant to stop.
+            plan = inputs.plan
+            payload["plan"] = (
+                plan.model_dump(mode="json") if hasattr(plan, "model_dump") else plan
+            )
+            payload["instruction"] = (
+                "Build the chart this plan describes. The decision has been made "
+                "and reviewed — follow the chart_type, encodings and transforms. "
+                "Depart from it only if the plan is impossible against this data, "
+                "and say so in `reasoning`."
+            )
+            chart_type = getattr(plan, "chart_type", "") or (
+                plan.get("chart_type", "") if isinstance(plan, dict) else ""
+            )
+            payload["examples"] = _retrieve_examples(chart_type)
+        else:
+            ranked = rules_recommend(profile, question=inputs.question)
+            payload["recommendations"] = [
                 {"chart_type": r.chart_type, "score": round(r.score, 2), "reason": r.reason}
                 for r in ranked
-            ],
-            "examples": _retrieve_examples(ranked.best.chart_type if ranked.best else ""),
-        }
+            ]
+            payload["examples"] = _retrieve_examples(
+                ranked.best.chart_type if ranked.best else ""
+            )
+
         if inputs.chart_type:
             payload["required_chart_type"] = inputs.chart_type
+        if inputs.complaint:
+            payload["previous_attempt_rejected_because"] = inputs.complaint
+            payload["retry_instruction"] = (
+                "A previous attempt was rejected for the reason above. Fix that "
+                "specifically; do not rebuild the chart from scratch."
+            )
         return json.dumps(payload, indent=2, default=str)
 
     def apply(self, inputs: GenerateIn, output: GenerateOut) -> SkillResult[GenerateOut]:

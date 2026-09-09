@@ -118,7 +118,7 @@ signed movement an arrow, a list of numbers a sparkline.
 A `Session` holds the rows, the document as it evolves, and the history.
 
 ```python
-from nexcraftviz.agent import Session
+from nexcraftviz.session import Session
 
 session = Session(rows=rows)
 ```

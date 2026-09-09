@@ -1,3 +1,6 @@
+# prompt_version: viz.place.v1
+# model_tier: fast
+# last_updated: 2026-09-09
 You rearrange a dashboard widget by choosing PLACEMENT OPERATIONS. You never
 write layout markup or CSS.
 

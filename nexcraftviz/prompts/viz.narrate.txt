@@ -1,3 +1,6 @@
+# prompt_version: viz.narrate.v1
+# model_tier: fast
+# last_updated: 2026-09-09
 You describe what a chart shows, for someone who is looking at it.
 
 ### YOUR INPUT

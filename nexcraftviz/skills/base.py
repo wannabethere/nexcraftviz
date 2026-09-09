@@ -22,6 +22,7 @@ release.
 from __future__ import annotations
 
 import json
+import re
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
@@ -254,9 +255,35 @@ def load_prompt(name: str) -> tuple[str, str]:
     for root in roots:
         candidate = root / filename
         if candidate.exists():
-            return candidate.read_text(encoding="utf-8").strip(), f"{name}@{version}"
+            _, body = split_headers(candidate.read_text(encoding="utf-8"))
+            return body, f"{name}@{version}"
 
     raise SkillError(f"prompt {name!r} not found (looked for {filename} in {roots})")
+
+
+def split_headers(text: str) -> tuple[dict[str, str], str]:
+    """Separate a prompt's leading ``# key: value`` block from its body.
+
+    The headers are metadata for us — the tier the agent registry asserts
+    against, the version, when it was last touched — and are stripped before the
+    text reaches a model. Leaving them in would mean a bookkeeping edit silently
+    changes what the model is asked, which is how a prompt regresses without
+    anyone touching the instructions.
+    """
+    headers: dict[str, str] = {}
+    lines = text.splitlines()
+    index = 0
+    for index, line in enumerate(lines):  # noqa: B007 — index is used after the loop
+        match = _HEADER_LINE.match(line)
+        if not match:
+            break
+        headers[match.group(1).strip().lower()] = match.group(2).strip()
+    else:
+        index = len(lines)
+    return headers, "\n".join(lines[index:]).strip()
+
+
+_HEADER_LINE = re.compile(r"^#\s*([A-Za-z_][A-Za-z0-9_]*)\s*:\s*(.*)$")
 
 
 def _terse(exc: ValidationError) -> str:

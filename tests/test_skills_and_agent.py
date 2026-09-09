@@ -5,11 +5,11 @@ import json
 
 import pytest
 
-from nexcraftviz.agent import Session
-from nexcraftviz.agent.route import route
 from nexcraftviz.compose.widget import Widget
 from nexcraftviz.examples import talent_acquisition_widget
 from nexcraftviz.integrations.tools import BY_NAME, call, op_schemas, tool_schemas
+from nexcraftviz.session import Session
+from nexcraftviz.session.route import route
 from nexcraftviz.skills import REGISTRY, SkillError, get, names
 from nexcraftviz.spec.model import Spec
 
@@ -192,7 +192,15 @@ def _inputs_for(name: str) -> dict:
         return {"spec": CHART, "rows": ROWS, "question": "revenue by region"}
     if name == "viz.theme":
         return {"spec": CHART, "theme": "nexcraftviz-dark"}
-    return {"instruction": "sort descending", "spec": CHART, "rows": ROWS}
+    if name == "viz.plan":
+        return {"question": "revenue by region", "rows": ROWS}
+    if name == "viz.critique":
+        return {"question": "revenue by region", "spec": CHART, "rows": ROWS}
+    if name == "viz.edit":
+        return {"instruction": "sort descending", "spec": CHART, "rows": ROWS}
+    # No silent fallback: a new skill should fail here rather than be handed an
+    # edit-shaped input that happens to validate and prove nothing.
+    raise AssertionError(f"no test input defined for {name!r}")
 
 
 # ---------------------------------------------------------------------------

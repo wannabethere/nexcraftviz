@@ -27,9 +27,9 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
-from nexcraftviz.agent.route import Route, route
 from nexcraftviz.compose.widget import Widget
 from nexcraftviz.data.profile import profile_rows
+from nexcraftviz.session.route import Route, route
 from nexcraftviz.skills import REGISTRY, SkillResult, get
 from nexcraftviz.skills.base import LLMRunner, Prompt
 from nexcraftviz.spec.diff import apply_patch
@@ -109,12 +109,27 @@ class Session:
         document: Spec | Widget | None = None,
         theme: str = "nexcraftviz-light",
         language: str = "English",
+        pipeline: bool = False,
+        registry: Any = None,
     ) -> None:
         self.id = id or f"sess_{uuid.uuid4().hex[:12]}"
         self.rows = list(rows or [])
         self.document = document
         self.theme = theme
         self.language = language
+        #: Route a *new chart* through plan → generate → evaluate → deliver
+        #: instead of straight to `viz.generate`. Editing is unaffected: an edit
+        #: names the change and the chart already exists, so planning it again
+        #: would be a second model call that decides nothing.
+        self.pipeline = pipeline
+        self.registry = registry
+        #: How much judgement a pipeline turn buys. "gates" is free, "full" adds
+        #: the critic, "off" skips evaluation. A session-level setting rather
+        #: than a per-message one because it is a deployment choice.
+        self.pipeline_evaluate = "gates"
+        #: The last pipeline run, so a host can show the plan and the verdict
+        #: rather than only the finished chart.
+        self.last_run: Any = None
         self.turns: list[Turn] = []
         self._undo: list[tuple[str, Any]] = []
         self._redo: list[tuple[str, Any]] = []
@@ -181,6 +196,16 @@ class Session:
             if skill
             else route(message, has_chart=self.has_chart, has_widget=self.has_widget)
         )
+        if self.pipeline and chosen.skill == "viz.generate":
+            # A pipeline turn is several model calls with a decision between
+            # them, so it cannot be handed back as one prompt. Saying so beats
+            # silently returning the single-call prompt and having the host
+            # believe it ran the pipeline.
+            raise ValueError(
+                "a new chart in pipeline mode runs several model calls; use "
+                "`await session.turn(...)`, or drive `run_pipeline` yourself and "
+                "call `session.adopt_run(run)`"
+            )
         if chosen.skill not in REGISTRY:
             chosen = Route("viz.edit", f"unknown skill {chosen.skill!r}; falling back")
 
@@ -224,6 +249,9 @@ class Session:
         self, message: str, *, llm: LLMRunner | None = None, skill: str = ""
     ) -> Turn:
         """Route, run the model if one is needed, and apply the result."""
+        if self.pipeline and not skill and self._is_new_chart(message):
+            return await self._pipeline_turn(message, llm=llm)
+
         proposal = self.propose(message, skill=skill)
         handler = get(proposal.skill)
 
@@ -240,6 +268,56 @@ class Session:
             )
 
         return self.commit(proposal, model_output)
+
+    # -- pipeline mode -----------------------------------------------------
+
+    def _is_new_chart(self, message: str) -> bool:
+        return route(
+            message, has_chart=self.has_chart, has_widget=self.has_widget
+        ).skill == "viz.generate"
+
+    async def _pipeline_turn(self, message: str, *, llm: LLMRunner | None) -> Turn:
+        from nexcraftviz.pipeline import ChartRequest, run_pipeline
+
+        run = await run_pipeline(
+            ChartRequest(
+                question=message,
+                rows=self.rows,
+                language=self.language,
+                theme=self.theme,
+            ),
+            registry=self.registry,
+            llm=llm,
+            evaluate=str(self.pipeline_evaluate),
+        )
+        return self.adopt_run(run, message=message)
+
+    def adopt_run(self, run: Any, *, message: str = "") -> Turn:
+        """Fold a pipeline run into the session: document, history, and a turn.
+
+        Public so a host that drove `run_pipeline` itself — with its own
+        registry, or across a queue — lands in the same session state as one
+        that called `turn()`.
+        """
+        self.last_run = run
+        turn = Turn(
+            id=f"turn_{uuid.uuid4().hex[:8]}",
+            message=message,
+            skill="pipeline",
+            reply=_reply_from_run(run),
+            changes=list(run.trace),
+            warnings=[] if run.ok else [run.reason or run.status],
+            failed=[] if run.spec is not None else [("pipeline", run.reason or "no chart")],
+        )
+        if run.spec is not None:
+            # No inverse patch: a pipeline turn replaces the document outright
+            # rather than editing it, and an undo stack entry that cannot
+            # reconstruct the previous chart is worse than none.
+            self.document = run.spec
+            self._undo.clear()
+            self._redo.clear()
+        self.turns.append(turn)
+        return turn
 
     # -- history -----------------------------------------------------------
 
@@ -357,6 +435,20 @@ class Session:
 
         after = apply_patch(before, patch).raw
         return diff(after, before)
+
+
+def _reply_from_run(run: Any) -> str:
+    """One line a user can read, with the verdict in it rather than buried."""
+    if run.spec is None:
+        return run.reason or "I could not build a chart from this data."
+    plan = run.stages.plan
+    line = f"Built a {plan.chart_type if plan else 'chart'}."
+    if plan and plan.rationale:
+        line += f" {plan.rationale}"
+    evaluation = run.stages.evaluate
+    if evaluation is not None and not evaluation.passed:
+        line += f" One caveat: {evaluation.complaint()}"
+    return line
 
 
 def _reply_from(result: SkillResult) -> str:

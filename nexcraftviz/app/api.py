@@ -1,6 +1,6 @@
 """HTTP surface — hosted mode, and the server half of the embed.
 
-Every route is a thin wrapper over :class:`~nexcraftviz.agent.session.Session`,
+Every route is a thin wrapper over :class:`~nexcraftviz.session.session.Session`,
 and both execution modes are exposed rather than one being the "real" one:
 
 * ``POST /v1/sessions/{id}/propose`` + ``/commit`` — the host owns the model.
@@ -21,8 +21,8 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from nexcraftviz import __version__
-from nexcraftviz.agent.session import Proposal, Session
 from nexcraftviz.compose.widget import Widget
+from nexcraftviz.session.session import Proposal, Session
 from nexcraftviz.skills import REGISTRY
 from nexcraftviz.spec.model import Spec
 
@@ -198,7 +198,7 @@ def create_app(store: SessionStore | None = None, *, llm: Any = None) -> Any:
     def commit(session_id: str, body: CommitIn) -> dict[str, Any]:
         """Apply what the host's model returned."""
         session = _require(session_id)
-        from nexcraftviz.agent.route import Route
+        from nexcraftviz.session.route import Route
 
         proposal = Proposal(
             turn_id=body.turn_id,

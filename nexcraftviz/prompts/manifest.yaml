@@ -1,7 +1,19 @@
 # Prompts are data, not string literals in Python: they can be versioned,
 # diffed, reviewed and overridden (NEXCRAFTVIZ_PROMPT_DIR) without a release.
+#
+# The model tier lives in each prompt's own `# model_tier:` header, next to
+# the text whoever changes it is reading, and the agent registry parses it
+# there. Repeating it here would give one fact two owners.
 version: 1
 prompts:
+  viz.plan:
+    file: viz.plan.txt
+    version: 1
+    output: ChartPlan
+  viz.critique:
+    file: viz.critique.txt
+    version: 1
+    output: Critique
   viz.edit:
     file: viz.edit.txt
     version: 1
