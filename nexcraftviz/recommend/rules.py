@@ -27,6 +27,9 @@ INTENT_HINTS: dict[str, tuple[str, ...]] = {
     "distribution": ("distribution", "spread", "histogram", "outlier", "range", "variance"),
     "target-vs-actual": ("target", "goal", "quota", "sla", "threshold", "on track"),
     "flow": ("funnel", "conversion", "drop-off", "dropoff", "pipeline", "stage"),
+    "progress": ("burndown", "burn rate", "sprint", "remaining", "schedule",
+                 "timeline", "gantt", "milestone", "on track", "runway",
+                 "cumulative flow", "bottleneck", "onboarding", "ramp"),
 }
 
 #: Above this many category combinations, grouped bars stop being legible and a

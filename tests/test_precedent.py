@@ -262,3 +262,78 @@ def test_the_document_describes_the_decision_not_the_data():
     assert pair.purpose in document
     assert pair.use_when[0] in document
     assert pair.vega_lite_spec not in document
+
+
+# ---------------------------------------------------------------------------
+# pipeline and progress charts
+# ---------------------------------------------------------------------------
+
+SPRINT = [{"day": f"2026-02-0{i}", "remaining": 90 - 9 * i, "ideal": 84 - 10 * i}
+          for i in range(1, 8)]
+SCHEDULE = [
+    {"task": "Build", "start": "2026-01-19", "end": "2026-03-06", "status": "In progress"},
+    {"task": "UAT", "start": "2026-03-02", "end": "2026-03-27", "status": "Not started"},
+    {"task": "Rollout", "start": "2026-03-23", "end": "2026-04-17", "status": "Not started"},
+]
+MILESTONES = [
+    {"milestone": "Joined", "date": "2026-01-12", "status": "Met"},
+    {"milestone": "Probation", "date": "2026-04-12", "status": "Met"},
+    {"milestone": "Review", "date": "2026-11-20", "status": "Not started"},
+]
+BOARD = [
+    {"day": "2026-02-02", "status": "To do", "items": 24},
+    {"day": "2026-02-02", "status": "Done", "items": 0},
+    {"day": "2026-02-06", "status": "To do", "items": 15},
+    {"day": "2026-02-06", "status": "Done", "items": 6},
+    {"day": "2026-02-10", "status": "To do", "items": 6},
+    {"day": "2026-02-10", "status": "Done", "items": 16},
+]
+
+
+@pytest.mark.parametrize(
+    ("rows", "question", "expected"),
+    [
+        (SPRINT, "are we on track to finish the sprint?", "burndown"),
+        (SPRINT, "what is our burn rate?", "burndown"),
+        (SCHEDULE, "show the delivery timeline", "gantt"),
+        (SCHEDULE, "which phases overlap?", "gantt"),
+        (MILESTONES, "what key dates are coming up for this person?", "milestone_timeline"),
+        (BOARD, "where is work getting stuck on the board?", "cumulative_flow"),
+    ],
+)
+def test_progress_questions_find_their_chart(rows, question, expected):
+    found = precedents(profile_rows(rows), question=question)
+    assert found.best is not None, f"nothing suggested for {question!r}"
+    assert found.best.chart_type == expected
+
+
+def test_an_event_chart_accepts_a_date_that_is_not_an_axis():
+    """A gantt bar spans one task's dates and a milestone marks one checkpoint.
+    For these the per-row attribute date is the subject, not a trap — the gate
+    that protects trend charts must not disqualify them."""
+    profile = profile_rows(MILESTONES)
+    assert profile.time_axis is None, "the fixture is the attribute-date case"
+    assert "milestone_timeline" in {p.chart_type for p in precedents(profile)}
+
+
+def test_a_series_chart_still_needs_a_real_axis():
+    """The protection that event charts opt out of must still hold for the
+    charts it was written for."""
+    attribute_dates = [
+        {"unit": "Clinical", "completed": 905, "next_audit": "2026-03-14"},
+        {"unit": "Retail", "completed": 1201, "next_audit": "2026-04-21"},
+        {"unit": "Logistics", "completed": 321, "next_audit": "2026-01-30"},
+    ]
+    ranked = _types(attribute_dates, "which units are behind?")
+    assert not ({"line", "multi_line", "area"} & set(ranked)), ranked
+
+
+def test_every_new_type_has_enough_examples_to_be_retrieved():
+    """A chart type with one example cannot be retrieved in any useful way."""
+    from nexcraftviz.corpus.loader import seed
+
+    counts: dict[str, int] = {}
+    for pair in seed().pairs:
+        counts[pair.chart_type] = counts.get(pair.chart_type, 0) + 1
+    for chart_type in ("gantt", "burndown", "milestone_timeline", "cumulative_flow"):
+        assert counts.get(chart_type, 0) >= 2, chart_type

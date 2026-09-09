@@ -178,8 +178,13 @@ def test_use_case_edits_all_apply() -> None:
 
 
 def test_gallery_covers_the_whole_corpus() -> None:
+    from nexcraftviz.corpus.loader import seed
+
     html = build_gallery()
-    assert html.count("nxv-gallery__item") == 200
+    # Derived, not a literal: the assertion is "every pair is on the page",
+    # and a hard-coded count turns every corpus addition into a test edit
+    # while quietly no longer checking coverage at all.
+    assert html.count("nxv-gallery__item") == len(seed().pairs)
     # all three families are represented
     assert "nxv-kpi--" in html and "nxv-cell--" in html and "__nxvSpecs" in html
 

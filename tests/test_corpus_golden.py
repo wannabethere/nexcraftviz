@@ -30,8 +30,14 @@ CORPUS = seed()
 VEGA_PAIRS = CORPUS.with_vega_specs
 
 
+#: The corpus only grows — a pair is added when a chart type earns one, and
+#: removed only when it was wrong. A floor catches a corpus that silently
+#: shrank without making every addition a test edit.
+MINIMUM_PAIRS = 200
+
+
 def test_corpus_loads() -> None:
-    assert len(CORPUS) == 200
+    assert len(CORPUS) >= MINIMUM_PAIRS
     assert CORPUS.tenant == "global"
 
 

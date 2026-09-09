@@ -150,7 +150,7 @@ def precedents(
 
     for pair in corpus:
         required = _required_kinds(pair.data_shape)
-        shape = _shape_score(required, profile)
+        shape = _shape_score(required, profile, series=_plots_a_series(pair))
         if shape <= 0.0:
             # The data cannot support this chart at all. Not a low score — a
             # disqualification, or a two-column result would rank every
@@ -263,7 +263,20 @@ def _required_kinds(data_shape: dict[str, Any] | None) -> list[Kind]:
     ]
 
 
-def _shape_score(required: list[Kind], profile: DataProfile) -> float:
+#: Corpus shapes that plot dated EVENTS rather than a series through time. For
+#: these a per-row attribute date is not a trap, it is the subject: a gantt bar
+#: spans one task's dates and a milestone marks one checkpoint. Every other
+#: date-consuming shape connects observations and needs the rows to be
+#: observations.
+_EVENT_SHAPES = frozenset({"temporal-points", "date-range-categorical"})
+
+
+def _plots_a_series(pair: Any) -> bool:
+    """Does this chart connect points through time, or just mark them?"""
+    return str((pair.kinds or {}).get("shape") or "") not in _EVENT_SHAPES
+
+
+def _shape_score(required: list[Kind], profile: DataProfile, *, series: bool = True) -> float:
     """Can this data support that chart, and how snugly?
 
     Zero means it cannot, and disqualification matters more than ranking here:
@@ -278,12 +291,20 @@ def _shape_score(required: list[Kind], profile: DataProfile) -> float:
         kind = kind_of(column)
         available[kind] = available.get(kind, 0) + 1
 
-    # Not every date is an axis. `next_audit` on a per-business-unit result is
-    # an attribute describing each row, and a chart that plots against it draws
-    # a line through unrelated points. `DataProfile.time_axis` already makes
-    # that distinction, so a chart requiring a date is only satisfied when the
-    # rows are actually observations over one.
-    if profile.time_axis is None:
+    # Not every date is an axis — but that only rules out charts that plot a
+    # SERIES over time. `next_audit` on a per-business-unit result is an
+    # attribute describing each row, and a line through it connects unrelated
+    # points; a gantt or a milestone timeline plots exactly such attribute
+    # dates, and that is the whole point of them.
+    #
+    # The corpus already separates the two in `kinds.shape`: `temporal-dense`
+    # and friends connect observations, `temporal-points` and
+    # `date-range-categorical` mark events. Reading that beats a list of chart
+    # names here, and it beats `time_axis` alone — which reported "no axis" for
+    # milestone rows and "axis" for near-identical gantt rows, purely because
+    # one profiled its label column as a dimension and the other as an
+    # identifier.
+    if series and profile.time_axis is None:
         available.pop("date", None)
 
     needed: dict[Kind, int] = {}
