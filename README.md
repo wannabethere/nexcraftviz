@@ -209,10 +209,30 @@ nothing new to set:
 | `OPENAI_API_KEY` | the key |
 | `OPENAI_MODEL` | model id, default `gpt-5-mini` |
 
+Set it wherever suits — the environment is read directly, and a `.env` is
+loaded if one is found (nearest first, walking upwards, never overriding what
+you have already exported):
+
+```bash
+cp .env.example .env        # then fill in OPENAI_API_KEY
+# or
+export OPENAI_API_KEY=sk-...
+# or, just for one command
+OPENAI_API_KEY=sk-... make eval-live
+```
+
+`nexcraftviz config` says what it resolved, so a missing key is obvious before
+it becomes a 401:
+
 ```bash
 pip install 'nexcraftviz[openai]'
+nexcraftviz config                   # provider, model, which .env files were found
 nexcraftviz serve                    # picks up a key if one is set, says so if not
 ```
+
+`.env` files are gitignored; `.env.example` is committed. Variable names match
+genieml's, so one file serves both stacks. Nothing here is required — without a
+key, `propose`/`commit` and every deterministic skill still work.
 
 Two provider details worth knowing, both pinned by tests. `gpt-5*` and the
 `o*` families **reject a custom temperature** — sending one is a hard 400, not

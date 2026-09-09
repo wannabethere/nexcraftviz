@@ -15,7 +15,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from nexcraftviz import __version__
+from nexcraftviz import __version__, env
 from nexcraftviz.data.profile import profile_rows
 from nexcraftviz.spec.model import Spec
 from nexcraftviz.spec.ops import apply_ops
@@ -28,6 +28,11 @@ def main(argv: list[str] | None = None) -> int:
         description="Deterministic Vega-Lite spec tooling: profile, validate, edit, render.",
     )
     parser.add_argument("--version", action="version", version=f"nexcraftviz {__version__}")
+    parser.add_argument(
+        "--no-dotenv",
+        action="store_true",
+        help="Do not read a .env file; use the environment as-is.",
+    )
     sub = parser.add_subparsers(dest="command", required=True)
 
     p_profile = sub.add_parser("profile", help="Profile a CSV or JSON data file.")
@@ -90,6 +95,8 @@ def main(argv: list[str] | None = None) -> int:
     p_eval.add_argument("--model", default="", help="Override OPENAI_MODEL.")
     p_eval.add_argument("--json", action="store_true")
 
+    sub.add_parser("config", help="Show the resolved configuration and where it came from.")
+
     sub.add_parser("mcp", help="Run the MCP server over stdio.")
 
     p_tools = sub.add_parser("tools", help="Print the agent tool schemas.")
@@ -124,6 +131,10 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     args = parser.parse_args(argv)
+    if not args.no_dotenv:
+        # Matches genieml, which loads a .env in genieml_skills/env.py and
+        # cp2/env.py. Never overrides what is already exported.
+        env.load()
     try:
         return _dispatch(args)
     except (OSError, ValueError) as exc:
@@ -154,6 +165,8 @@ def _dispatch(args: argparse.Namespace) -> int:
         return _cmd_serve(args)
     if args.command == "eval":
         return _cmd_eval(args)
+    if args.command == "config":
+        return _cmd_config(args)
     if args.command == "mcp":
         return _cmd_mcp(args)
     if args.command == "tools":
@@ -330,10 +343,30 @@ def _cmd_serve(args: argparse.Namespace) -> int:
     print(f"  embed:  http://{args.host}:{args.port}/embed/nexcraftviz.js")
     print(f"  tools:  http://{args.host}:{args.port}/v1/tools")
     if llm is None:
-        print("  model:  none — /propose and /commit work; /turn returns 503")
+        print(f"  model:  none ({env.describe_provider()})")
+        print("          /propose and /commit work; /turn returns 503")
     else:
         print(f"  model:  {model}")
     uvicorn.run(create_app(llm=llm), host=args.host, port=args.port, log_level="warning")
+    return 0
+
+
+def _cmd_config(args: argparse.Namespace) -> int:
+    """Say what is configured, so a missing key is obvious before a 401 is."""
+    from nexcraftviz.render import available as render_available
+    from nexcraftviz.theme import available_themes
+
+    files = [] if args.no_dotenv else env.find_env_files()
+    print(f"provider:   {env.describe_provider()}")
+    print(f"model var:  OPENAI_MODEL={os.getenv('OPENAI_MODEL', '') or '(unset)'}")
+    print(f".env files: {', '.join(str(f) for f in files) or '(none found)'}")
+    try:
+        import dotenv  # noqa: F401
+    except ImportError:
+        print("            python-dotenv not installed — .env files are ignored")
+    print(f"rendering:  {'available' if render_available() else 'needs the render extra'}")
+    print(f"themes:     {', '.join(available_themes())}")
+    print(f"prompts:    {os.getenv('NEXCRAFTVIZ_PROMPT_DIR', '') or '(bundled)'}")
     return 0
 
 

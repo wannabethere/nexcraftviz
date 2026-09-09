@@ -10,3 +10,7 @@ build/
 .mypy_cache/
 .DS_Store
 scratch/
+
+# Secrets. .env.example is committed; .env is not.
+.env
+.env.local
