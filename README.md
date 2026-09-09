@@ -134,6 +134,49 @@ smart : NEXCRAFTVIZ_SMART_MODEL → OPENAI_MODEL → gpt-5-mini
 The tier is declared on the agent **and** in the prompt's own `# model_tier:`
 header, with a test asserting the two agree.
 
+## Embedding in a dashboard
+
+Two calls for a host that owns the data and the widget — a dashboard tile
+rather than a chat panel. Stateless: the caller already has a widget id to key
+on, so making it mint a session to draw one chart is ceremony.
+
+```
+POST /v1/chart/create        question + rows → a chart, through the pipeline
+POST /v1/chart/annotate      instruction + spec + rows → the manager
+GET  /v1/chart/capabilities  what this surface can actually produce
+```
+
+**Rows, not SQL.** nexcraftviz has no database and wants none; the caller passes
+the rows it already has.
+
+**The caller composes the question.** `create` requires one — a chart built from
+a question nobody can see is a chart nobody can check. `question_for(rows)` is
+available as a convenience, never applied on its own.
+
+**The surface declares what it renders.** `capabilities` returns the twenty
+chart types the corpus covers and names the renderer, so a consumer never
+hardcodes the list. A spec the consumer cannot draw is refused rather than
+handed over to render as a blank rectangle.
+
+### The manager
+
+`annotate` takes free text, and one sentence can mean several things:
+
+```
+"make it dark and sort descending"  → theme, then edit
+"what does this show and sort it"   → edit, then narrate (prose describes the
+                                       chart the user ends up looking at)
+"break it down by month"            → declined: that needs a different query
+```
+
+Most instructions cost **no model call**: the clauses are labelled by the same
+rules that route the conversation, and the model is asked only about what those
+could not read.
+
+Declining is a first-class outcome. nexcraftviz cannot run a query, so anything
+needing data the rows do not contain comes back with a reason instead of a chart
+that answers a question nobody asked.
+
 ## Is this thing set up?
 
 ```bash

@@ -1,0 +1,82 @@
+# The widget shapes the Lexy dashboard actually renders.
+#
+# Lexy draws with react-vega's <VegaLite>, and its widgets come in four shapes:
+# a single number, a ranked comparison, a trend, and a rich table. Each of these
+# is one of those, with the question composed the way the UI composes it — from
+# the widget title and the column names, never typed by a user.
+#
+# What these guard is the surface contract rather than the chart: that every
+# widget shape produces something Vega-Lite can draw and every gate holds. The
+# chart type is only graded on a live run, since offline the stand-in picks it.
+
+scenarios:
+
+  widget_single_number:
+    question: >
+      Total open findings. Show the most useful view of this result set
+      (open_findings).
+    note: >
+      One row, one measure — a KPI, not a bar chart with a single bar. Lexy has
+      dedicated KPI rendering keyed on chart_type containing "kpi", which is
+      exactly what the endpoint being replaced could not return.
+    rows:
+      - {open_findings: 47}
+    expect_chart_type: [kpi]
+    require_gates: [validates]
+
+  widget_ranked_comparison:
+    question: >
+      Findings by business unit. Show the most useful view of this result set
+      (business_unit, findings).
+    note: "The most common widget on the dashboard."
+    rows:
+      - {business_unit: "Retail", findings: 34}
+      - {business_unit: "Wholesale", findings: 21}
+      - {business_unit: "Digital", findings: 47}
+      - {business_unit: "Corporate", findings: 12}
+    expect_chart_type: [bar, grouped_bar]
+    expect_fields: [business_unit, findings]
+
+  widget_trend:
+    question: >
+      Completion over time. Show the most useful view of this result set
+      (month, completion_pct).
+    note: >
+      completion_pct is a rate. Four months summed is a meaningless 340%, which
+      is what data_honesty is here to catch.
+    rows:
+      - {month: "2026-01-01", completion_pct: 71.0}
+      - {month: "2026-02-01", completion_pct: 78.5}
+      - {month: "2026-03-01", completion_pct: 82.0}
+      - {month: "2026-04-01", completion_pct: 88.25}
+    expect_chart_type: [line, area]
+    require_gates: [validates, data_honesty]
+
+  widget_two_dimensions:
+    question: >
+      Findings by unit and severity. Show the most useful view of this result
+      set (business_unit, severity, findings).
+    note: >
+      Two dimensions and a measure. A heatmap or a grouped bar are both honest
+      readings; neither is available through the seven-type contract.
+    rows:
+      - {business_unit: "Retail", severity: "High", findings: 12}
+      - {business_unit: "Retail", severity: "Low", findings: 22}
+      - {business_unit: "Digital", severity: "High", findings: 31}
+      - {business_unit: "Digital", severity: "Low", findings: 16}
+    expect_chart_type: [heatmap, grouped_bar, stacked_bar, bar]
+    expect_fields: [business_unit, findings]
+
+  widget_entity_rows:
+    question: >
+      Control owners. Show the most useful view of this result set
+      (owner, control_id, days_open).
+    note: >
+      Rows are entities, not observations. control_id identifies a row and must
+      not end up on an axis as though it were a value — the data_honesty gate
+      exists for exactly that.
+    rows:
+      - {owner: "A. Rivera", control_id: "CTL-1041", days_open: 18}
+      - {owner: "B. Chen", control_id: "CTL-2277", days_open: 43}
+      - {owner: "C. Okafor", control_id: "CTL-3390", days_open: 7}
+    require_gates: [validates, data_honesty]

@@ -361,3 +361,52 @@ def test_an_unknown_session_is_a_404(stub_llm):
         "rows": ROWS, "session_id": "sess_nope",
     })
     assert response.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# the seven-type trap
+# ---------------------------------------------------------------------------
+
+KPI_ROWS = [{"open_findings": 47}]
+HEATMAP_ROWS = [
+    {"unit": "Retail", "severity": "High", "findings": 12},
+    {"unit": "Retail", "severity": "Low", "findings": 22},
+    {"unit": "Digital", "severity": "High", "findings": 31},
+    {"unit": "Digital", "severity": "Low", "findings": 16},
+]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("rows", "question", "expected"),
+    [
+        (KPI_ROWS, "How many findings are open?", "kpi"),
+        (HEATMAP_ROWS, "How do findings break down by unit and severity?",
+         ("heatmap", "grouped_bar", "stacked_bar")),
+    ],
+)
+async def test_types_outside_the_old_seven_round_trip(rows, question, expected):
+    """The endpoint this replaces declared chart_type as a Literal of seven, and
+    FastAPI validates responses — so a KPI or a heatmap was a 500, even though
+    the UI already has KPI rendering. These must come back intact."""
+    from harness.offline import offline_runner
+
+    result = await create_chart(question=question, rows=rows, llm=offline_runner(rows))
+    expected = (expected,) if isinstance(expected, str) else expected
+    assert result["chart_type"] in expected
+    assert result["chart_schema"]
+    assert result["chart_type"] in capabilities()["chart_types"]
+
+
+@pytest.mark.asyncio
+async def test_a_kpi_keeps_the_metadata_the_ui_branches_on():
+    """Lexy renders a KPI by reading chart_type for "kpi" and the kpi_metadata
+    block. Losing either turns a KPI into a blank card."""
+    from harness.offline import offline_runner
+
+    result = await create_chart(
+        question="How many findings are open?", rows=KPI_ROWS,
+        llm=offline_runner(KPI_ROWS),
+    )
+    assert "kpi" in result["chart_type"]
+    assert isinstance(result["chart_schema"].get("kpi_metadata"), dict)
