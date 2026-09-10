@@ -659,3 +659,105 @@ def test_a_real_hard_coded_label_is_left_alone():
     assert _gate(
         run_gates(spec, rows=[{"pct": 0.62}], skip=("renders",)), "data_honesty"
     ).passed
+
+
+# ---------------------------------------------------------------------------
+# fields a plan creates are not invented columns
+# ---------------------------------------------------------------------------
+
+def test_a_field_created_by_a_transform_is_not_an_invented_column(rows):
+    """Found live: a plan for quarter labels added a `calculate` producing
+    `quarter_sort` so the labels plot in time order. Counting that output as a
+    column read from the data rejected a correct plan."""
+    from nexcraftviz.skills import REGISTRY
+
+    skill = REGISTRY["viz.plan"]
+    plan = ChartPlan.model_validate({
+        **PLAN_PAYLOAD,
+        "transforms": [{"kind": "calculate", "detail": "a sort key", "field": "region_sort"}],
+    })
+    assert plan.derived_fields() == {"region_sort"}
+    assert "region_sort" not in plan.fields_used()
+    result = skill.apply(skill.coerce_input({"question": "q", "rows": rows}), plan)
+    assert not result.failed, result.failed
+
+
+def test_a_filter_on_a_missing_column_is_still_invented(rows):
+    """A filter READS its field. The data has no cost centre, so this plan
+    genuinely asks for something that is not there."""
+    from nexcraftviz.skills import REGISTRY
+
+    skill = REGISTRY["viz.plan"]
+    plan = ChartPlan.model_validate({
+        **PLAN_PAYLOAD,
+        "transforms": [{"kind": "filter", "detail": "one cost centre", "field": "cost_centre"}],
+    })
+    result = skill.apply(skill.coerce_input({"question": "q", "rows": rows}), plan)
+    assert result.failed and "cost_centre" in result.failed[0][1]
+
+
+# ---------------------------------------------------------------------------
+# a planned field is honoured wherever the spec reads it
+# ---------------------------------------------------------------------------
+
+TOP_N_SPEC_TRANSFORMS = [
+    {"aggregate": [{"op": "sum", "field": "revenue", "as": "sum_revenue"}],
+     "groupby": ["region"]},
+    {"window": [{"op": "rank", "as": "rank"}],
+     "sort": [{"field": "sum_revenue", "order": "descending"}]},
+    {"filter": "datum.rank <= 3"},
+]
+
+
+def test_matches_plan_accepts_a_planned_field_read_by_a_transform(rows):
+    """Found live: a correct top-3 — sum revenue as sum_revenue, rank, filter —
+    failed matches_plan for "missing revenue" twice, retry included. The gate's
+    own comment said transforms rename things; its code only read encodings."""
+    plan = ChartPlan(chart_type="bar", encodings=[
+        EncodingIntent(channel="x", field="revenue", aggregate="sum"),
+        EncodingIntent(channel="y", field="region"),
+    ])
+    spec = Spec({
+        "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+        "data": {"values": rows},
+        "transform": TOP_N_SPEC_TRANSFORMS,
+        "mark": "bar",
+        "encoding": {
+            "y": {"field": "region", "type": "nominal"},
+            "x": {"field": "sum_revenue", "type": "quantitative"},
+        },
+    })
+    result = _gate(run_gates(spec, plan=plan, rows=rows, skip=("renders",)), "matches_plan")
+    assert result.passed, result.detail
+
+
+def test_a_field_read_only_inside_an_expression_counts(rows):
+    plan = ChartPlan(chart_type="bar", encodings=[EncodingIntent(channel="y", field="orders")])
+    spec = Spec({
+        "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+        "data": {"values": rows},
+        "transform": [{"calculate": "datum.orders * 2", "as": "doubled"}],
+        "mark": "bar",
+        "encoding": {"y": {"field": "doubled", "type": "quantitative"}},
+    })
+    assert _gate(run_gates(spec, plan=plan, rows=rows, skip=("renders",)), "matches_plan").passed
+
+
+def test_matches_plan_still_catches_a_field_read_nowhere(rows):
+    """The widened check must still bite: `orders` appears in no encoding, no
+    transform and no expression."""
+    plan = ChartPlan(chart_type="bar", encodings=[
+        EncodingIntent(channel="x", field="orders"), EncodingIntent(channel="y", field="region"),
+    ])
+    spec = Spec({
+        "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+        "data": {"values": rows},
+        "transform": TOP_N_SPEC_TRANSFORMS,
+        "mark": "bar",
+        "encoding": {
+            "y": {"field": "region", "type": "nominal"},
+            "x": {"field": "sum_revenue", "type": "quantitative"},
+        },
+    })
+    result = _gate(run_gates(spec, plan=plan, rows=rows, skip=("renders",)), "matches_plan")
+    assert not result.passed and "orders" in result.detail

@@ -19,7 +19,7 @@ from nexcraftviz.compose.widget import Widget
 from nexcraftviz.data.profile import DataProfile, profile_rows
 from nexcraftviz.skills.base import Skill, SkillResult, SkillSpec
 from nexcraftviz.spec.model import Spec
-from nexcraftviz.spec.ops import AnyOp, apply_ops
+from nexcraftviz.spec.ops import ModelOp, apply_ops
 from nexcraftviz.spec.validate import validate
 
 # ---------------------------------------------------------------------------
@@ -47,7 +47,7 @@ class EditIn(BaseModel):
 class EditOut(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    ops: list[AnyOp] = Field(default_factory=list, description="Operations, in order.")
+    ops: list[ModelOp] = Field(default_factory=list, description="Operations, in order.")
     reasoning: str = Field(default="", description="One sentence about the data.")
     needs_data: str = Field(
         default="",

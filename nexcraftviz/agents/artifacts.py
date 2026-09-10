@@ -73,7 +73,12 @@ class TransformIntent(BaseModel):
     kind: str = Field(description="filter | top_n | bin | fold | window | calculate")
     detail: str = Field(default="", description="What it does, in words.")
     field: str = ""
-    value: Any = None
+    #: Typed, not `Any`. OpenAI's strict mode rejects an untyped field, and one
+    #: untyped field anywhere drops the WHOLE schema to non-strict — silently,
+    #: since the provider falls back rather than failing. Non-strict only loosely
+    #: enforces structure, and a live run came back with a field placed where it
+    #: does not exist, which crashed the pipeline.
+    value: str | int | float | bool | list[str] | None = None
 
 
 class StylingIntent(BaseModel):
@@ -111,6 +116,11 @@ class ChartMetadata(BaseModel):
     )
 
 
+#: Transform kinds whose `field` names the column they produce, not one they
+#: read. `filter`, `top_n` and `bin` read theirs.
+_CREATES_FIELD = frozenset({"calculate", "window", "fold"})
+
+
 class ChartPlan(BaseModel):
     """What to draw, decided before anything is drawn."""
 
@@ -138,11 +148,26 @@ class ChartPlan(BaseModel):
     def ok(self) -> bool:
         return self.status == "ok"
 
+    def derived_fields(self) -> set[str]:
+        """Fields the plan's own transforms CREATE — outputs, not columns.
+
+        A live plan for "2025-Q1"-style quarters added a `calculate` producing
+        `quarter_sort` so the labels plot in time order — a good plan. Counting
+        that field as a column read from the data called it invented, and the
+        planner rejected its own correct work.
+        """
+        return {t.field for t in self.transforms if t.field and t.kind in _CREATES_FIELD}
+
     def fields_used(self) -> set[str]:
-        """Every column the plan intends to touch — what the generator must honour."""
-        used = {e.field for e in self.encodings if e.field}
-        used |= {t.field for t in self.transforms if t.field}
-        return used
+        """Every column the plan reads from the data — what must exist there.
+
+        Fields a transform creates are excluded, even when an encoding uses
+        them: those come from the plan, not the rows. A filter or top-N on a
+        column the data lacks is still counted, because that one is read.
+        """
+        read = {e.field for e in self.encodings if e.field}
+        read |= {t.field for t in self.transforms if t.field and t.kind not in _CREATES_FIELD}
+        return read - self.derived_fields()
 
     def summary(self) -> str:
         if not self.ok:
@@ -164,6 +189,12 @@ class GenerateArtifact(BaseModel):
     chart_type: str = ""
     reasoning: str = ""
     repaired: list[str] = Field(default_factory=list)
+    defect: bool = Field(
+        default=False,
+        description="The attempt produced something unusable — as opposed to the "
+                    "generator deciding no chart suits the data. Only a defect is "
+                    "worth a regeneration; a decision would just be made again.",
+    )
     telemetry: Telemetry = Field(default_factory=Telemetry)
 
     @property

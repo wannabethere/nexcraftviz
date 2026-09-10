@@ -72,12 +72,28 @@ class ScenarioResult:
     #: What this result is evidence of. An offline run grades the wiring; only
     #: a live run grades the chart.
     graded: str = "full"
+    #: The ask and the data, kept so a report can show the question, the answer
+    #: and the chart side by side without re-running anything.
+    question: str = ""
+    rows: list[dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "scenario": self.scenario,
             "passed": self.passed,
             "graded": self.graded,
+            "question": self.question,
+            "rows": self.rows,
+            "plan": (
+                self.run.stages.plan.model_dump(mode="json", exclude={"telemetry"})
+                if self.run and self.run.stages.plan else None
+            ),
+            "spec": self.run.spec.raw if self.run and self.run.spec is not None else None,
+            "critique": (
+                self.run.stages.evaluate.critique.model_dump(mode="json")
+                if self.run and self.run.stages.evaluate
+                and self.run.stages.evaluate.critique else None
+            ),
             "problems": self.problems,
             "error": self.error,
             "run": self.run.to_dict() if self.run else None,
@@ -139,6 +155,10 @@ async def run_scenarios(
             ))
             continue
         results.append(_grade(scenario, run, offline=offline))
+    # Exactly one result per scenario, in order — `strict` says so out loud.
+    for result, scenario in zip(results, scenarios, strict=True):
+        result.question = scenario.question
+        result.rows = list(scenario.rows)
     return results
 
 

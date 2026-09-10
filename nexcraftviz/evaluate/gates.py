@@ -20,6 +20,7 @@ specific thing it exists to catch.
 """
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from typing import Any
 
@@ -148,9 +149,12 @@ def _matches_plan(spec: Spec, *, plan: ChartPlan | None, rows: list[dict[str, An
 
     planned_fields = plan.fields_used()
     if planned_fields:
-        built = {f for _, _, f in spec.field_refs()}
-        # Transforms legitimately rename things, so only complain when a
-        # planned field is nowhere at all.
+        # A planned field is honoured wherever the spec reads it: in an
+        # encoding, or as the input of a transform. This comment always said
+        # transforms rename things; the code only looked at encodings, so a
+        # correct top-N — sum `revenue` as `sum_revenue`, rank, filter — failed
+        # for "missing revenue" twice in a live run, retry included.
+        built = {f for _, _, f in spec.field_refs()} | _transform_inputs(spec)
         missing = sorted(planned_fields - built) if built else []
         if missing and len(missing) == len(planned_fields):
             problems.append(f"none of the planned fields appear: {', '.join(missing)}")
@@ -160,6 +164,49 @@ def _matches_plan(spec: Spec, *, plan: ChartPlan | None, rows: list[dict[str, An
     if problems:
         return GateResult(gate="matches_plan", passed=False, detail="; ".join(problems))
     return GateResult(gate="matches_plan", passed=True)
+
+
+#: A field read inside an expression: `datum.revenue` or `datum['revenue']`.
+_DATUM = re.compile(r"""datum(?:\.([A-Za-z_]\w*)|\[['"]([^'"]+)['"]\])""")
+
+
+def _transform_inputs(spec: Spec) -> set[str]:
+    """Every field a transform READS, anywhere in the spec.
+
+    Inputs only: an `as` names what a transform produces. Expressions in
+    `calculate` and `filter` count through their `datum.` references.
+    """
+    found: set[str] = set()
+
+    def read(node: Any) -> None:
+        if isinstance(node, dict):
+            for key, value in node.items():
+                if key == "field" and isinstance(value, str):
+                    found.add(value)
+                elif key in ("groupby", "fold") and isinstance(value, list):
+                    found.update(v for v in value if isinstance(v, str))
+                elif key != "as":
+                    read(value)
+        elif isinstance(node, list):
+            for item in node:
+                read(item)
+        elif isinstance(node, str):
+            for match in _DATUM.finditer(node):
+                found.add(match.group(1) or match.group(2))
+
+    def walk(node: Any) -> None:
+        if isinstance(node, dict):
+            for key, value in node.items():
+                if key == "transform" and isinstance(value, list):
+                    read(value)
+                elif key != "data":
+                    walk(value)
+        elif isinstance(node, list):
+            for item in node:
+                walk(item)
+
+    walk(spec.raw)
+    return found
 
 
 #: Which Vega marks satisfy a planned chart type. Only the unambiguous ones —

@@ -157,6 +157,7 @@ class GeneratorAgent(SkillAgent):
             return GenerateArtifact(
                 status="failed",
                 reason_if_not_ok=str(exc),
+                defect=True,
                 telemetry=Telemetry(
                     wall_ms=int((time.perf_counter() - started) * 1000),
                     agent=self.spec.name,
@@ -174,6 +175,9 @@ class GeneratorAgent(SkillAgent):
         )
         if result.value is None:
             artifact.status = "failed"
+            # Failed steps mean the attempt was broken; none means the model
+            # decided no chart suits the data, which a retry would only repeat.
+            artifact.defect = bool(result.failed)
             artifact.reason_if_not_ok = (
                 "; ".join(detail for _, detail in result.failed)
                 or "the generator produced no spec"

@@ -18,6 +18,7 @@ from __future__ import annotations
 from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
+from pydantic.json_schema import SkipJsonSchema
 
 from nexcraftviz.spec.diff import Patch, diff, invert
 from nexcraftviz.spec.model import Spec, SpecError, View
@@ -100,13 +101,43 @@ class ViewOp(BaseOp):
 # Marks and geometry
 # ---------------------------------------------------------------------------
 
+class MarkProperties(BaseModel):
+    """The mark properties a model may set — typed, so strict mode accepts them.
+
+    This was a free-form ``dict``. OpenAI's strict mode refuses an open object,
+    and the refusal is silent (the provider falls back to a looser binding), so
+    every viz.edit call ran unenforced. Listing the properties closes it for the
+    model; ``extra="allow"`` keeps accepting any other key from callers — an MCP
+    agent sending ``{"tension": 0.5}`` still works exactly as before.
+
+    Colour is deliberately absent. It belongs to the theme, and a hard-coded
+    mark colour is the thing the ``no_baked_styling`` gate exists to catch.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    point: bool | None = Field(default=None, description="Draw a point at each value (lines).")
+    filled: bool | None = None
+    cornerRadius: float | None = Field(default=None, description="Rounded bar corners, px.")
+    strokeWidth: float | None = None
+    strokeDash: list[float] | None = Field(default=None, description="Dash pattern, e.g. [4, 2].")
+    interpolate: str | None = Field(
+        default=None, description="linear | monotone | step | basis — line and area shape."
+    )
+    opacity: float | None = None
+    size: float | None = None
+    orient: str | None = Field(default=None, description="horizontal | vertical")
+    innerRadius: float | None = Field(default=None, description="Donut hole, px.")
+    tooltip: bool | None = None
+
+
 class SetMark(ViewOp):
     """Change the mark type, preserving mark properties where they still apply."""
 
     op: Literal["set_mark"] = "set_mark"
     mark: str = Field(description="Vega-Lite mark type, e.g. bar, line, area, point, arc.")
-    properties: dict[str, Any] = Field(
-        default_factory=dict,
+    properties: MarkProperties = Field(
+        default_factory=MarkProperties,
         description="Mark properties to merge, e.g. {'point': true, 'cornerRadius': 3}.",
     )
 
@@ -115,7 +146,7 @@ class SetMark(ViewOp):
             existing = view.node.get("mark")
             props: dict[str, Any] = dict(existing) if isinstance(existing, dict) else {}
             props["type"] = self.mark
-            props.update(self.properties)
+            props.update(self.properties.model_dump(exclude_none=True))
             # A bare string mark stays a bare string when nothing else is set —
             # it keeps hand-written specs readable.
             view.node["mark"] = props if len(props) > 1 else self.mark
@@ -511,8 +542,14 @@ class AddAnnotation(BaseOp):
 
     op: Literal["add_annotation"] = "add_annotation"
     text: str
-    x: Any = Field(default=None, description="Datum value on x, or None to omit.")
-    y: Any = Field(default=None, description="Datum value on y, or None to omit.")
+    # Typed, not `Any`: one untyped field drops viz.edit's whole schema out of
+    # OpenAI's strict mode. A datum is a category, a number or a date string.
+    x: str | int | float | None = Field(
+        default=None, description="Datum value on x, or None to omit."
+    )
+    y: str | int | float | None = Field(
+        default=None, description="Datum value on y, or None to omit."
+    )
     color: str = Field(default="#334155")
 
     def apply(self, spec: Spec) -> None:
@@ -634,7 +671,9 @@ class SetScale(ViewOp):
     type: str | None = Field(default=None, description="linear | log | sqrt | pow | time | band")
     zero: bool | None = None
     nice: bool | None = None
-    domain: list[Any] | None = None
+    # Typed items: `list[Any]` puts an untyped schema in viz.edit, and strict
+    # mode refuses it. A domain is numbers, categories or date strings.
+    domain: list[str | int | float] | None = None
 
     def apply(self, spec: Spec) -> None:
         for view in self._targets(spec):
@@ -679,9 +718,12 @@ class SetTooltip(ViewOp):
 
     op: Literal["set_tooltip"] = "set_tooltip"
     fields: list[str] = Field(default_factory=list)
-    types: dict[str, str] = Field(
-        default_factory=dict, description="Optional per-field measurement types."
-    )
+    #: Hidden from the model's schema, still accepted from callers. A model
+    #: should not have to know measurement types — the spec already does — and
+    #: an open ``dict`` here kept viz.edit out of strict mode. Absent a type,
+    #: `apply` reads it from the spec instead of assuming "nominal", which was
+    #: wrong for every number.
+    types: SkipJsonSchema[dict[str, str]] = Field(default_factory=dict)
 
     def apply(self, spec: Spec) -> None:
         for view in self._targets(spec):
@@ -690,8 +732,27 @@ class SetTooltip(ViewOp):
                 enc.pop("tooltip", None)
                 continue
             enc["tooltip"] = [
-                {"field": name, "type": self.types.get(name, "nominal")} for name in self.fields
+                {"field": name, "type": self._type_of(name, view, spec)} for name in self.fields
             ]
+
+    def _type_of(self, name: str, view: View, spec: Spec) -> str:
+        """A caller's type, else the one this field is already encoded with,
+        else the type its values imply."""
+        if self.types.get(name):
+            return self.types[name]
+        for definition in view.encoding.values():
+            entries = definition if isinstance(definition, list) else [definition]
+            for entry in entries:
+                if isinstance(entry, dict) and entry.get("field") == name and entry.get("type"):
+                    return str(entry["type"])
+        for row in spec.data_values:
+            value = row.get(name)
+            if value is None:
+                continue
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                return "quantitative"
+            return "nominal"
+        return "nominal"
 
 
 class ApplyConfig(BaseOp):
@@ -750,6 +811,38 @@ AnyOp = Annotated[
     | ResolveScale
     | SetTooltip
     | ApplyConfig,
+    Field(discriminator="op"),
+]
+
+#: What a MODEL may emit — every operation except `ApplyConfig`.
+#:
+#: `ApplyConfig` is how a theme reaches a spec: the theme system builds it from
+#: tokens. A model hand-writing a config block is exactly the baked-in styling
+#: the theme exists to prevent, and the edit prompt never asks for it. It is
+#: also an open ``dict``, which OpenAI's strict mode refuses — leaving it in the
+#: union made every viz.edit call silently non-strict. `AnyOp` keeps it, so the
+#: theme system and MCP callers are unaffected.
+ModelOp = Annotated[
+    SetMark
+    | SetSize
+    | SetTitle
+    | SetPalette
+    | SetColorField
+    | SortBy
+    | LimitTopN
+    | StackMode
+    | GroupBy
+    | FacetBy
+    | BinField
+    | Aggregate
+    | AddReferenceLine
+    | AddAnnotation
+    | AddSeries
+    | DropSeries
+    | SetAxis
+    | SetScale
+    | ResolveScale
+    | SetTooltip,
     Field(discriminator="op"),
 ]
 

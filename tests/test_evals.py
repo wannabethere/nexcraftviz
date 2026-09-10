@@ -406,3 +406,46 @@ async def test_a_critic_that_rejects_the_right_chart_fails() -> None:
         _case("critique-right-chart"), _stub(_verdict(False, "could be prettier"))
     )
     assert not result.ok
+
+
+
+# ---------------------------------------------------------------------------
+# a silent fallback is reported, not hidden
+# ---------------------------------------------------------------------------
+
+def _bound(payload: dict, binding: str):
+    async def run_stub(system: str, user: str, schema: dict):
+        return payload, {"model": "stub", "structured_output": binding}
+    return run_stub
+
+
+async def test_a_non_strict_binding_is_reported_not_hidden() -> None:
+    """How this was found: viz.plan ran non-strict for an entire live run and
+    nothing said so. The one failure it caused looked like a flaky model."""
+    from nexcraftviz.evals.runner import Report
+
+    strict = await run_case(
+        _case("plan-ranking"),
+        _bound(_plan("bar", [("x", "region", ""), ("y", "revenue", "sum")]),
+               "json_schema_strict"),
+    )
+    loose = await run_case(
+        _case("plan-single-value"),
+        _bound(_plan("kpi", [("text", "total_revenue", "")]), "json_schema"),
+    )
+    report = Report(results=[strict, loose], model="stub")
+    assert report.bindings()["viz.plan"] == ["json_schema", "json_schema_strict"]
+    assert report.non_strict() == ["viz.plan"]
+    assert "NOT strict" in report.render()
+
+
+async def test_an_all_strict_run_carries_no_warning() -> None:
+    from nexcraftviz.evals.runner import Report
+
+    result = await run_case(
+        _case("plan-ranking"),
+        _bound(_plan("bar", [("x", "region", ""), ("y", "revenue", "sum")]),
+               "json_schema_strict"),
+    )
+    rendered = Report(results=[result]).render()
+    assert "NOT strict" not in rendered and "NOT STRICT" not in rendered

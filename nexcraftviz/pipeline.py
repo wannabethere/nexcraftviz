@@ -18,10 +18,43 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-from nexcraftviz.agents.artifacts import ChartStages, DeliveryArtifact, EvaluationArtifact
+from nexcraftviz.agents.artifacts import (
+    ChartStages,
+    DeliveryArtifact,
+    EvaluationArtifact,
+    GateResult,
+)
 from nexcraftviz.agents.registry import AgentRegistry, StageContext, StageError
+from nexcraftviz.skills.base import SkillError
 
 Stage = Literal["plan", "generate", "evaluate", "deliver"]
+
+
+class ModelCallError(StageError):
+    """The model runner raised — a provider outage, a timeout, a revoked key.
+
+    A StageError, so the pipeline's existing boundary reports it as a failed run
+    with a readable reason rather than a 500 with a stack trace. Only the runner
+    is wrapped: an exception from nexcraftviz's own code is NOT converted, so a
+    genuine bug here still fails loudly in tests instead of reading as a flaky
+    provider.
+    """
+
+
+def _guarded(llm: Any) -> Any:
+    """The host's runner, with its failures made legible."""
+    if llm is None:
+        return None
+
+    async def guarded(system: str, user: str, schema: dict[str, Any]) -> Any:
+        try:
+            return await llm(system, user, schema)
+        except Exception as exc:  # noqa: BLE001 — the runner is the host's code
+            raise ModelCallError(
+                f"the model call failed: {type(exc).__name__}: {exc}"
+            ) from exc
+
+    return guarded
 
 STAGES: tuple[Stage, ...] = ("plan", "generate", "evaluate", "deliver")
 
@@ -51,6 +84,10 @@ class ChartRun:
     status: str = "ok"
     reason: str = ""
     wall_ms: int = 0
+    #: Regenerations spent, from one budget shared by every stage that can ask
+    #: for one — so "exactly one retry" stays true however the first attempt
+    #: went wrong.
+    regenerations: int = 0
 
     @property
     def spec(self) -> Any:
@@ -71,6 +108,7 @@ class ChartRun:
             "completed": self.stages.completed(),
             "trace": self.trace,
             "wall_ms": self.wall_ms,
+            "regenerations": self.regenerations,
             "tokens": self.stages.total_tokens(),
             "telemetry": {
                 name: t.model_dump() for name, t in self.stages.telemetry().items()
@@ -104,7 +142,7 @@ async def run_pipeline(
         language=request.language,
         theme=request.theme,
         stages=stages,
-        llm=llm,
+        llm=_guarded(llm),
         options=dict(request.options),
     )
 
@@ -114,20 +152,38 @@ async def run_pipeline(
             return _finish(run, started)
 
         await _generate(ctx, run, registry)
+        generated = run.stages.generate
+        if (run.status != "ok" and generated is not None and generated.defect
+                and run.regenerations < max_regenerations):
+            # An attempt that produced something unusable — JSON the balancer
+            # would not guess at, say — gets the one regeneration, told exactly
+            # what broke. A deliberate "no chart suits this data" does not.
+            complaint = (
+                f"your previous answer could not be used: {run.reason}. Return "
+                f"spec_json as ONE complete JSON document — every brace and "
+                f"bracket closed, every string terminated."
+            )
+            run.trace.append(f"retry: {complaint}")
+            run.regenerations += 1
+            run.status, run.reason = "ok", ""
+            await _generate(_with_complaint(ctx, complaint), run, registry)
         if run.status != "ok" or stop_after == "generate":
             return _finish(run, started)
 
         if evaluate != "off":
             await _evaluate(ctx, run, registry, full=evaluate == "full",
-                            max_regenerations=max_regenerations)
+                            max_regenerations=max_regenerations - run.regenerations)
         if stop_after == "evaluate":
             return _finish(run, started)
 
         await _deliver(ctx, run, registry)
-    except StageError as exc:
-        # A stage that cannot run at all, as distinct from one that ran and
-        # produced a non-ok artifact. The difference matters: this is a wiring
-        # problem, not a data problem.
+    except (StageError, SkillError) as exc:
+        # A stage that could not run at all — wiring, or the model provider
+        # failing — or a model answer that could not be read. Distinct from a
+        # stage that ran and produced a non-ok artifact: this is not a data
+        # problem. Either way the caller gets a failed run with the reason, not
+        # a 500. A live viz.plan once returned a field placed where it does not
+        # exist; before this, that took the whole request down.
         run.status = "failed"
         run.reason = str(exc)
         run.trace.append(f"aborted: {exc}")
@@ -187,6 +243,7 @@ async def _evaluate(
     run.trace.append(f"retry: {complaint}")
     retry_ctx = _with_complaint(ctx, complaint)
     retried = await registry.get("generator").run(retry_ctx)
+    run.regenerations += 1
 
     if not retried.ok:
         # The first spec was flawed but real; the retry produced nothing. Keep
@@ -215,7 +272,18 @@ async def _judge(
     # The critic is asked only when the free checks are already clean. Paying a
     # model to opine on a chart that does not render is waste.
     if full and evaluation.passed and registry.has("critic"):
-        evaluation.critique = await registry.get("critic").run(ctx)
+        try:
+            evaluation.critique = await registry.get("critic").run(ctx)
+        except (StageError, SkillError) as exc:
+            # The chart has already passed every deterministic gate. A critic
+            # that cannot answer is a missing opinion, not a failed chart — so
+            # it is recorded the way a broken gate is: passing, with the reason.
+            evaluation.gates.append(GateResult(
+                gate="critic",
+                passed=True,
+                detail=f"critic unavailable ({type(exc).__name__}: {exc}) — "
+                       f"not counted against the chart",
+            ))
     return evaluation
 
 

@@ -17,3 +17,4 @@ scratch/
 
 # Harness runs are local evidence, not source.
 harness/results/*.json
+harness/results/*.html

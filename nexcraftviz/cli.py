@@ -125,6 +125,11 @@ def main(argv: list[str] | None = None) -> int:
     h_report = harness_sub.add_parser("report", help="Re-print the last run, or compare two.")
     h_report.add_argument("--compare", nargs=2, metavar=("BEFORE", "AFTER"))
     h_report.add_argument("--json", action="store_true")
+    h_report.add_argument(
+        "--html", metavar="PATH",
+        help="Write one page with every question, answer and chart from the latest "
+             "eval run and harness run.",
+    )
 
     p_corpus = sub.add_parser(
         "corpus", help="Inspect the corpus, or index it for semantic retrieval."
@@ -556,6 +561,20 @@ def _cmd_harness(args: argparse.Namespace) -> int:
     if args.harness_command == "report":
         if args.compare:
             print(compare(Path(args.compare[0]), Path(args.compare[1])), end="")
+            return 0
+        if args.html:
+            from harness.html_report import build_report
+            from harness.html_report import latest as latest_of
+
+            eval_path, run_path = latest_of("eval"), latest_of("run")
+            if eval_path is None and run_path is None:
+                print(f"no runs found in {RESULTS_DIR}", file=sys.stderr)
+                return 1
+            target = Path(args.html)
+            target.write_text(
+                build_report(eval_path=eval_path, run_path=run_path), encoding="utf-8"
+            )
+            print(f"wrote {target} from {', '.join(p.name for p in (eval_path, run_path) if p)}")
             return 0
         newest = latest_result()
         if newest is None:

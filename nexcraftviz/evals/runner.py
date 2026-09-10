@@ -23,6 +23,9 @@ from nexcraftviz.skills import get
 from nexcraftviz.skills.base import LLMRunner
 from nexcraftviz.spec.model import Spec
 
+#: The binding that actually enforces the schema. Anything else is a fallback.
+STRICT_BINDING = "json_schema_strict"
+
 
 @dataclass
 class CaseResult:
@@ -36,6 +39,15 @@ class CaseResult:
     notes: list[str] = field(default_factory=list)
     error: str = ""
     meta: dict[str, Any] = field(default_factory=dict)
+    #: The structured-output binding the provider actually used for this call.
+    binding: str = ""
+    #: What the answer produced, for a report to show: a spec's JSON or a
+    #: widget's document. None for decisions that produce no artifact.
+    artifact: dict[str, Any] | None = None
+    #: The model's whole answer — narration prose, a generator's reasoning, a
+    #: plan's rationale — so a report can show what was said, not only what
+    #: it produced.
+    answer: dict[str, Any] | None = None
 
     def line(self) -> str:
         mark = "PASS" if self.ok else "FAIL"
@@ -71,13 +83,41 @@ class Report:
             out[result.case.skill] = (hit + int(result.ok), total + 1)
         return out
 
+    def bindings(self) -> dict[str, list[str]]:
+        """Which structured-output binding each skill's calls actually got.
+
+        The provider falls back from strict to a looser binding silently, when
+        OpenAI refuses a schema. A skill running non-strict still mostly works —
+        viz.plan passed four of five cases that way — which is exactly why it
+        has to be visible: the failures it causes read as a flaky model rather
+        than a schema defect.
+        """
+        seen: dict[str, set[str]] = {}
+        for result in self.results:
+            if result.binding:
+                seen.setdefault(result.case.skill, set()).add(result.binding)
+        return {skill: sorted(used) for skill, used in seen.items()}
+
+    def non_strict(self) -> list[str]:
+        return sorted(
+            skill for skill, used in self.bindings().items() if used != [STRICT_BINDING]
+        )
+
     def render(self) -> str:
         lines = [f"model: {self.model or '(unknown)'}", ""]
+        bindings = self.bindings()
         for skill, (hit, total) in sorted(self.by_skill().items()):
-            lines.append(f"{skill}  {hit}/{total}")
+            used = bindings.get(skill, [])
+            warning = ""
+            if used and used != [STRICT_BINDING]:
+                warning = f"   ⚠ ran {', '.join(used)} — NOT strict, its schema was refused"
+            lines.append(f"{skill}  {hit}/{total}{warning}")
             lines.extend(r.line() for r in self.results if r.case.skill == skill)
             lines.append("")
         lines.append(f"total {self.passed}/{self.total}")
+        if self.non_strict():
+            lines.append(f"NOT STRICT: {', '.join(self.non_strict())} — fix the schema; "
+                         f"see tests/test_strict_schemas.py")
         return "\n".join(lines)
 
 
@@ -103,6 +143,14 @@ async def run_case(case: Case, llm: LLMRunner) -> CaseResult:
         return result
 
     result.meta = outcome.meta
+    result.binding = str((outcome.meta or {}).get("structured_output") or "")
+    if outcome.output is not None and hasattr(outcome.output, "model_dump"):
+        result.answer = outcome.output.model_dump(mode="json", exclude={"telemetry"})
+    value = outcome.value
+    if isinstance(value, Spec):
+        result.artifact = value.raw
+    elif hasattr(value, "tiles") and hasattr(value, "to_dict"):
+        result.artifact = value.to_dict()
     output = outcome.output
     # Plain model_dump: `exclude_defaults` drops the `op` discriminator itself
     # (it has a default) and any argument the model happened to agree with,
@@ -145,6 +193,12 @@ def _check_outcome(case: Case, outcome: Any) -> tuple[bool, list[str]]:
         spec = outcome.value
         if not isinstance(spec, Spec) or not spec:
             return False, ["no spec produced"]
+        if outcome.meta.get("json_repaired"):
+            # Production repairs and gates it, so the case can pass — but the
+            # prompt produced broken JSON, and that belongs in the report.
+            notes.append(
+                f"the model's JSON needed repair: {'; '.join(outcome.meta['json_repaired'])}"
+            )
         if outcome.meta.get("valid") is False:
             return False, [outcome.warnings[0] if outcome.warnings else "invalid spec"]
 

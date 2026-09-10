@@ -15,6 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from nexcraftviz.data.profile import profile_rows
 from nexcraftviz.recommend.rules import recommend as rules_recommend
 from nexcraftviz.skills.base import Skill, SkillResult, SkillSpec
+from nexcraftviz.spec.jsonfix import balance_brackets
 from nexcraftviz.spec.model import Spec
 from nexcraftviz.spec.validate import validate
 from nexcraftviz.theme import apply_theme, available_themes, strip_hardcoded_colours
@@ -165,8 +166,21 @@ class GenerateSkill(Skill[GenerateIn, GenerateOut]):
             return result
 
         spec = Spec.from_json_lenient(output.spec_json)
+        json_notes: list[str] = []
         if not spec:
-            result.failed.append(("viz.generate", "the model's spec was not valid JSON"))
+            # The document arrives as a JSON string inside the answer, so strict
+            # mode guarantees nothing about it. A live model dropped one brace
+            # in a nested KPI spec; closing it has exactly one reading, and every
+            # gate still runs on the result. What the balancer will not guess at
+            # fails here, with the parse error, so a regeneration can fix it.
+            repaired, json_notes = balance_brackets(output.spec_json)
+            if json_notes:
+                spec = Spec.from_json_lenient(repaired)
+        if not spec:
+            result.failed.append((
+                "viz.generate",
+                f"the model's spec was not valid JSON ({_json_error(output.spec_json)})",
+            ))
             return result
 
         # Bind the rows the chart was generated for. The model is given a
@@ -182,12 +196,26 @@ class GenerateSkill(Skill[GenerateIn, GenerateOut]):
         result.value = spec
         result.changes = [f"generated a {output.chart_type or spec.mark_summary} chart"]
         result.changes.extend(f"repaired {note}" for note in report.repaired)
+        # After the reassignment above, or the note would be wiped.
+        result.changes.extend(f"repaired the model's JSON: {note}" for note in json_notes)
+        if json_notes:
+            result.meta["json_repaired"] = json_notes
+        result.meta["repaired"] = [*json_notes, *report.repaired]
         result.warnings.extend(str(issue) for issue in report.errors)
         result.meta["valid"] = report.ok
         result.meta["chart_type"] = output.chart_type
         if not report.ok:
             result.failed.append(("viz.generate", report.summary()))
         return result
+
+
+def _json_error(text: str) -> str:
+    """The parser's own words, which say where the document broke."""
+    try:
+        json.loads(text)
+    except json.JSONDecodeError as exc:
+        return str(exc)
+    return "unreadable"
 
 
 def _retrieve_examples(chart_type: str, limit: int = 2) -> list[dict[str, Any]]:
