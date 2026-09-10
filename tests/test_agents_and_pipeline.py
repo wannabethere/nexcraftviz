@@ -761,3 +761,44 @@ def test_matches_plan_still_catches_a_field_read_nowhere(rows):
     })
     result = _gate(run_gates(spec, plan=plan, rows=rows, skip=("renders",)), "matches_plan")
     assert not result.passed and "orders" in result.detail
+
+
+def test_a_comma_list_of_real_columns_becomes_one_encoding_each():
+    """Found live: a tooltip with `field: "quarter,nps"` failed the whole plan."""
+    from nexcraftviz.skills import REGISTRY
+
+    skill = REGISTRY["viz.plan"]
+    rows = [{"quarter": "2025-Q1", "nps": 31}, {"quarter": "2025-Q2", "nps": 36}]
+    answer = {
+        "status": "ok", "confidence": 0.8, "chart_type": "line", "alternatives": [],
+        "rationale": "", "transforms": [], "styling": {}, "metadata": {}, "follow_ups": [],
+        "encodings": [
+            {"channel": "x", "field": "quarter", "aggregate": "", "sort": "", "why": ""},
+            {"channel": "y", "field": "nps", "aggregate": "mean", "sort": "", "why": ""},
+            {"channel": "tooltip", "field": "quarter,nps", "aggregate": "", "sort": "", "why": ""},
+        ],
+    }
+    result = skill.apply(skill.coerce_input({"question": "NPS by quarter", "rows": rows}),
+                         skill.parse(answer))
+    assert not result.failed, result.failed
+    tooltips = [e.field for e in result.value.encodings if e.channel == "tooltip"]
+    assert tooltips == ["quarter", "nps"]
+
+
+def test_a_comma_list_with_an_invented_column_still_fails():
+    from nexcraftviz.skills import REGISTRY
+
+    skill = REGISTRY["viz.plan"]
+    rows = [{"quarter": "2025-Q1", "nps": 31}]
+    answer = {
+        "status": "ok", "confidence": 0.8, "chart_type": "line", "alternatives": [],
+        "rationale": "", "transforms": [], "styling": {}, "metadata": {}, "follow_ups": [],
+        "encodings": [
+            {"channel": "x", "field": "quarter", "aggregate": "", "sort": "", "why": ""},
+            {"channel": "tooltip", "field": "quarter,region", "aggregate": "", "sort": "",
+             "why": ""},
+        ],
+    }
+    result = skill.apply(skill.coerce_input({"question": "NPS by quarter", "rows": rows}),
+                         skill.parse(answer))
+    assert result.failed and "quarter,region" in result.failed[0][1]

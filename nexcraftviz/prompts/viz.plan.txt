@@ -84,7 +84,8 @@ chart agree rather than each describing the data separately.
 
 - `chart_type`, `alternatives` (considered and rejected), `rationale`.
 - `encodings` — one per channel, each with the field, the aggregate, any sort,
-  and a `why` of one clause.
+  and a `why` of one clause. `field` is ONE column name; for a tooltip showing
+  several columns, write one encoding per column.
 - `transforms` — filters, top-N, binning, folding.
 - `styling`, `metadata`, `follow_ups`.
 - `status`, `reason_if_not_ok`, `confidence`.

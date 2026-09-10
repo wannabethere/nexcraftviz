@@ -98,6 +98,7 @@ class PlanSkill(Skill[PlanIn, ChartPlan]):
         # renders empty. Catching it here saves a generation.
         known = set(profile_rows(inputs.rows).column_names)
         if known:
+            result.changes.extend(_split_field_lists(plan, known))
             invented = sorted(plan.fields_used() - known)
             if invented:
                 result.failed.append(
@@ -111,6 +112,29 @@ class PlanSkill(Skill[PlanIn, ChartPlan]):
 # ---------------------------------------------------------------------------
 # viz.critique
 # ---------------------------------------------------------------------------
+
+def _split_field_lists(plan: ChartPlan, known: set[str]) -> list[str]:
+    """One encoding per column, when a field arrived as a comma list of them.
+
+    Live, a plan's tooltip read `field: "quarter,nps"` — two real columns in one
+    string — and the whole plan failed as naming a column that does not exist.
+    Split only when every part is a real column; anything else is still an
+    invented field and still fails.
+    """
+    notes: list[str] = []
+    split: list[Any] = []
+    for encoding in plan.encodings:
+        parts = [part.strip() for part in (encoding.field or "").split(",")]
+        if len(parts) > 1 and all(part in known for part in parts):
+            split.extend(encoding.model_copy(update={"field": part}) for part in parts)
+            notes.append(f"split {encoding.channel} {encoding.field!r} into one "
+                         f"encoding per column")
+        else:
+            split.append(encoding)
+    if notes:
+        plan.encodings = split
+    return notes
+
 
 class CritiqueIn(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="forbid")
