@@ -345,3 +345,96 @@ def test_report_serialises(bar_spec: Spec) -> None:
     payload = report.to_dict()
     assert payload["ok"] is True
     assert payload["tier_reached"] == 3
+
+
+def test_an_aggregate_prefixed_sort_field_is_repaired_to_its_column():
+    """Found live: a grouped bar sorted by `total_findings` over data with
+    `findings`. The retry was told, suggestion and all, and returned the same
+    name."""
+    from nexcraftviz.spec.model import Spec
+
+    rows = [
+        {"business_unit": "Retail", "severity": "High", "findings": 12},
+        {"business_unit": "Ops", "severity": "Low", "findings": 3},
+    ]
+    spec = Spec({
+        "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+        "data": {"values": rows},
+        "mark": "bar",
+        "encoding": {
+            "x": {"field": "business_unit", "type": "nominal",
+                  "sort": {"field": "total_findings", "order": "descending"}},
+            "y": {"field": "findings", "type": "quantitative", "aggregate": "sum"},
+            "xOffset": {"field": "severity", "type": "nominal"},
+        },
+    })
+    fixed, report = validate(spec, data=rows, max_tier=2, repair=True)
+    assert report.ok, report.summary()
+    assert fixed.raw["encoding"]["x"]["sort"] == {
+        "field": "findings", "order": "descending", "op": "sum",
+    }
+    assert any("total_findings" in note for note in report.repaired)
+
+
+def test_an_aggregate_prefixed_encoding_field_becomes_that_aggregate():
+    """Also seen live: `mean_days_open` on the x axis over `days_open`."""
+    from nexcraftviz.spec.model import Spec
+
+    rows = [{"owner": "Priya", "days_open": 12}, {"owner": "Sam", "days_open": 30}]
+    spec = Spec({
+        "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+        "data": {"values": rows},
+        "mark": "bar",
+        "encoding": {"y": {"field": "owner", "type": "nominal"},
+                     "x": {"field": "mean_days_open", "type": "quantitative"}},
+    })
+    fixed, report = validate(spec, data=rows, max_tier=2, repair=True)
+    assert report.ok, report.summary()
+    assert fixed.raw["encoding"]["x"]["field"] == "days_open"
+    assert fixed.raw["encoding"]["x"]["aggregate"] == "mean"
+
+
+def test_a_prefix_over_no_real_column_is_not_guessed():
+    from nexcraftviz.spec.model import Spec
+
+    rows = [{"owner": "Priya", "findings": 12}]
+    spec = Spec({
+        "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+        "data": {"values": rows},
+        "mark": "bar",
+        "encoding": {"y": {"field": "owner", "type": "nominal"},
+                     "x": {"field": "total_widgets", "type": "quantitative"}},
+    })
+    _, report = validate(spec, data=rows, max_tier=2, repair=True)
+    assert not report.ok
+    assert report.errors[0].code == "unknown_field"
+
+
+@pytest.mark.parametrize("transform", [
+    {"window": [{"op": "sum", "field": "findings", "as": "unit_total"}],
+     "groupby": ["business_unit"]},
+    {"joinaggregate": [{"op": "sum", "field": "findings", "as": "unit_total"}],
+     "groupby": ["business_unit"]},
+])
+def test_a_field_a_transform_creates_inside_its_entries_is_known(transform):
+    """Found live: widget_two_dimensions sorted by `unit_total`, which its own
+    `window` created, and failed `validates` twice — first attempt and retry."""
+    from nexcraftviz.spec.model import Spec
+
+    rows = [
+        {"business_unit": "Retail", "severity": "High", "findings": 12},
+        {"business_unit": "Ops", "severity": "Low", "findings": 3},
+    ]
+    spec = Spec({
+        "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+        "data": {"values": rows},
+        "transform": [transform],
+        "mark": "bar",
+        "encoding": {
+            "x": {"field": "business_unit", "type": "nominal",
+                  "sort": {"field": "unit_total", "order": "descending"}},
+            "y": {"field": "findings", "type": "quantitative", "aggregate": "sum"},
+        },
+    })
+    _, report = validate(spec, data=rows, max_tier=2)
+    assert report.ok, report.summary()

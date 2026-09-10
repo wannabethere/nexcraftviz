@@ -372,9 +372,14 @@ def _transform_outputs(step: dict[str, Any]) -> set[str]:
         out.add(as_value)
     elif isinstance(as_value, list):
         out |= {v for v in as_value if isinstance(v, str)}
-    for aggregate in step.get("aggregate", []) or []:
-        if isinstance(aggregate, dict) and isinstance(aggregate.get("as"), str):
-            out.add(aggregate["as"])
+    # These three name each output inside its entry. Only `aggregate` was read,
+    # so a live grouped bar sorted by `unit_total` — created by its own
+    # `window` — was rejected as naming a column that does not exist, and a
+    # retry cannot fix a chart that was never wrong.
+    for key in ("aggregate", "window", "joinaggregate"):
+        for entry in step.get(key, []) or []:
+            if isinstance(entry, dict) and isinstance(entry.get("as"), str):
+                out.add(entry["as"])
     if isinstance(step.get("calculate"), str) and isinstance(step.get("as"), str):
         out.add(step["as"])
     # `fold` emits key/value pairs, renamed by `as` when given — which the
@@ -416,11 +421,16 @@ def _validate_sort_fields(
 def repair_data_binding(spec: Spec, profile: DataProfile) -> tuple[Spec, list[str]]:
     """Deterministically fix what tier 2 can fix, in place on a clone.
 
-    Two repairs, both safe:
+    Three repairs, all safe:
 
     * **Field rename** — an unknown field that is a close string match for a
       real column is rewritten to that column. The threshold is deliberately
-      high (0.82); a weak match is worse than an honest failure.
+      high (0.82); a weak match is worse than an honest failure. Sort fields
+      get the same treatment.
+    * **Aggregate prefix** — `total_findings` over data with `findings` is the
+      name of a sum the model meant to take, not a column. It becomes the
+      column plus the aggregate the prefix names — only when what remains is a
+      real column, and never overriding an aggregate the model wrote.
     * **Type coercion** — a declared measurement type incompatible with the
       profiled column type is replaced with the profiled type.
 
@@ -436,15 +446,27 @@ def repair_data_binding(spec: Spec, profile: DataProfile) -> tuple[Spec, list[st
 
     for view, channel, definition in repaired.encodings():
         known = scopes.get(view.path, root_columns)
+        notes.extend(_repair_sort_field(definition, known, _path_str(view.path, channel)))
         field_name = definition.get("field")
         if isinstance(field_name, str) and field_name and field_name not in known:
             match = _nearest(field_name, profile.column_names, cutoff=0.82)
+            stem = None if match else _aggregate_stem(field_name, known)
             if match:
                 definition["field"] = match
                 notes.append(
                     f"{_path_str(view.path, channel)}: field {field_name!r} → {match!r}"
                 )
                 field_name = match
+            elif stem:
+                column, op = stem
+                definition["field"] = column
+                if not definition.get("aggregate"):
+                    definition["aggregate"] = op
+                notes.append(
+                    f"{_path_str(view.path, channel)}: field {field_name!r} → "
+                    f"{definition['aggregate']} of {column!r}"
+                )
+                field_name = column
 
         if not isinstance(field_name, str) or field_name not in known:
             continue
@@ -464,6 +486,49 @@ def repair_data_binding(spec: Spec, profile: DataProfile) -> tuple[Spec, list[st
             )
 
     return repaired, notes
+
+
+#: Prefixes a model writes on a measure it means to aggregate — `total_findings`
+#: for the sum of `findings` — mapped to the aggregate each one names.
+_AGGREGATE_PREFIXES = {
+    "total": "sum", "sum": "sum", "mean": "mean", "avg": "mean", "average": "mean",
+    "median": "median", "min": "min", "max": "max", "count": "count",
+}
+
+
+def _aggregate_stem(name: str, known: set[str]) -> tuple[str, str] | None:
+    """`total_findings` → (`findings`, "sum"), when `findings` is a real column."""
+    head, sep, stem = name.partition("_")
+    op = _AGGREGATE_PREFIXES.get(head.lower())
+    if sep and op and stem in known:
+        return stem, op
+    return None
+
+
+def _repair_sort_field(definition: dict[str, Any], known: set[str], where: str) -> list[str]:
+    """A `sort: {field: ...}` naming a column that is not there does nothing.
+
+    Found live: a grouped bar sorted by `total_findings` over data with
+    `findings`. The validator said so and suggested the column; the retry
+    returned the same name. So it is fixed here rather than by asking again.
+    """
+    sort = definition.get("sort")
+    if not isinstance(sort, dict):
+        return []
+    name = sort.get("field")
+    if not isinstance(name, str) or not name or name in known:
+        return []
+    match = _nearest(name, sorted(known), cutoff=0.82)
+    op = ""
+    if not match and (stem := _aggregate_stem(name, known)):
+        match, op = stem
+    if not match:
+        return []
+    sort["field"] = match
+    if op and not sort.get("op"):
+        sort["op"] = op
+    suffix = f" ({sort['op']})" if sort.get("op") else ""
+    return [f"{where}.sort: field {name!r} → {match!r}{suffix}"]
 
 
 # ---------------------------------------------------------------------------

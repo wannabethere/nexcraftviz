@@ -49,3 +49,37 @@ def test_a_closer_with_nothing_open_is_not_guessed_at():
 def test_an_unterminated_string_is_not_guessed_at():
     text = '{"a": "never closed'
     assert balance_brackets(text) == (text, [])
+
+
+#: Live, widget_trend: the first view's encoding closed (`}}}`) and its layer
+#: object never did; the next view began where a key belonged.
+LIVE_UNCLOSED_LAYER = '{"$schema":"https://vega.github.io/schema/vega-lite/v5.json","title":"Monthly completion rate (Jan\u2013Apr 2026)","width":"container","height":240,"layer":[{"mark":{"type":"area","interpolate":"monotone","opacity":0.15},"encoding":{"x":{"field":"month","type":"temporal","axis":{"title":"Month"},"sort":"descending"},"y":{"field":"completion_pct","type":"quantitative","aggregate":"mean","axis":{"title":"Completion (%)"}}},{"mark":{"type":"line","strokeWidth":2.5,"interpolate":"monotone"},"encoding":{"x":{"field":"month","type":"temporal","sort":"descending"},"y":{"field":"completion_pct","type":"quantitative","aggregate":"mean"}}},{"mark":{"type":"point","filled":true,"size":60},"encoding":{"x":{"field":"month","type":"temporal","sort":"descending"},"y":{"field":"completion_pct","type":"quantitative","aggregate":"mean"},"tooltip":[{"field":"month","type":"temporal"},{"field":"completion_pct","type":"quantitative"}]}}],"data":{"values":[]}}'  # noqa: E501
+LIVE_UNCLOSED_LAYER_SPACED = '{"$schema":"https://vega.github.io/schema/vega-lite/v5.json","title":"Monthly completion rate (Jan\u2013Apr 2026)","width":"container","height":240,"layer":[{"mark":{"type":"line","interpolate":"monotone","strokeWidth":2.5},"encoding":{"x":{"field":"month","type":"temporal","sort":{"order":"descending"},"axis":{"title":"Month"}},"y":{"aggregate":"mean","field":"completion_pct","type":"quantitative","axis":{"title":"Completion rate (%)"}}} ,{"mark":{"type":"point","filled":true,"size":60},"encoding":{"x":{"field":"month","type":"temporal","sort":{"order":"descending"}},"y":{"aggregate":"mean","field":"completion_pct","type":"quantitative"},"tooltip":[{"field":"month","type":"temporal","title":"Month"},{"field":"completion_pct","aggregate":"mean","title":"Completion rate (%)"}]}}]}'  # noqa: E501
+#: Live, widget_trend: "Jan\u2013Apr" arrived as "Jan\x13Apr".
+LIVE_DROPPED_DASH = '{"$schema":"https://vega.github.io/schema/vega-lite/v5.json","width":"container","height":240,"title":{"text":"Monthly completion rate (Jan\x13Apr 2026)"},"layer":[{"mark":{"type":"area","opacity":0.12,"interpolate":"monotone"},"encoding":{"x":{"field":"month","type":"temporal","title":"Month","scale":{"reverse":true}},"y":{"field":"completion_pct","type":"quantitative","aggregate":"mean","title":"Completion rate (%)"}}},{"mark":{"type":"line","strokeWidth":2.5,"interpolate":"monotone"},"encoding":{"x":{"field":"month","type":"temporal","title":"Month","scale":{"reverse":true}},"y":{"field":"completion_pct","type":"quantitative","aggregate":"mean","title":"Completion rate (%)"},"tooltip":[{"field":"month","type":"temporal"},{"field":"completion_pct","type":"quantitative","aggregate":"mean","title":"Completion rate (%)","format":".2f"}]}},{"mark":{"type":"point","filled":true,"size":60},"encoding":{"x":{"field":"month","type":"temporal","title":"Month","scale":{"reverse":true}},"y":{"field":"completion_pct","type":"quantitative","aggregate":"mean","title":"Completion rate (%)"},"tooltip":[{"field":"month","type":"temporal"},{"field":"completion_pct","type":"quantitative","aggregate":"mean","title":"Completion rate (%)","format":".2f"}]}}],"data":{"values":[]}}'  # noqa: E501
+
+
+def test_a_layer_left_open_is_closed_where_its_sibling_begins():
+    """Seen three times in one live run — both trend scenarios, first attempt
+    and retry — so a regeneration is no answer to it."""
+    for text, views in ((LIVE_UNCLOSED_LAYER, 3), (LIVE_UNCLOSED_LAYER_SPACED, 2)):
+        repaired, notes = balance_brackets(text)
+        assert notes and "new array item" in notes[0]
+        doc = json.loads(repaired)
+        assert len(doc["layer"]) == views
+        assert all({"mark", "encoding"} <= set(view) for view in doc["layer"])
+
+
+def test_an_object_where_a_key_belongs_outside_an_array_is_refused():
+    """No sibling list to belong to, so no single reading."""
+    text = '{"a":{"b":1},{"c":2}}'
+    assert balance_brackets(text) == (text, [])
+
+
+def test_a_dash_that_arrived_as_a_control_character_is_restored():
+    from nexcraftviz.spec.jsonfix import repair_json
+
+    repaired, notes = repair_json(LIVE_DROPPED_DASH)
+    doc = json.loads(repaired)
+    assert doc["title"]["text"] == "Monthly completion rate (Jan\u2013Apr 2026)"
+    assert notes == ["restored '\u2013' from control character U+0013"]
