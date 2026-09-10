@@ -19,7 +19,7 @@ def test_check_reports_every_prerequisite():
     names = {c.name for c in report.checks}
     assert names == {
         "package", "prompts", "themes", "corpus", "render", "fonts", "api_key",
-        "agents", "retrieval",
+        "agents", "retrieval", "auth",
     }
 
 

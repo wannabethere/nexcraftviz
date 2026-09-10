@@ -57,6 +57,51 @@ BAR_SPEC = {
 }
 
 
+#: Four teams' completion rates. Summed they make a meaningless 314%.
+TEAM_RATE_ROWS: list[dict[str, Any]] = [
+    {"team": "Platform", "completion_pct": 82.0},
+    {"team": "Data", "completion_pct": 91.0},
+    {"team": "Growth", "completion_pct": 64.0},
+    {"team": "Support", "completion_pct": 77.0},
+]
+
+TOTAL_ROWS: list[dict[str, Any]] = [{"total_revenue": 561.0}]
+
+SORTED_BAR_SPEC = {
+    **BAR_SPEC,
+    "encoding": {
+        "x": {"field": "region", "type": "nominal", "sort": "-y"},
+        "y": {"field": "revenue", "type": "quantitative"},
+    },
+}
+
+ORDERS_BAR_SPEC = {
+    **BAR_SPEC,
+    "encoding": {
+        "x": {"field": "region", "type": "nominal"},
+        "y": {"field": "orders", "type": "quantitative"},
+    },
+}
+
+#: One big number where a comparison was asked for.
+TOTAL_TEXT_SPEC = {
+    "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+    "data": {"values": REGION_ROWS},
+    "mark": {"type": "text", "fontSize": 40},
+    "encoding": {"text": {"field": "revenue", "type": "quantitative", "aggregate": "sum"}},
+}
+
+KPI_SPEC = {"kpi_metadata": {"chart_type": "kpi", "title": "Total revenue", "value": 561}}
+
+TABLE_SPEC = {
+    "columns": [
+        {"field": "region", "header": "Region", "render": "text"},
+        {"field": "revenue", "header": "Revenue", "render": "number"},
+    ],
+    "data": {"values": REGION_ROWS},
+}
+
+
 @dataclass
 class Expectation:
     """One operation that must (or must not) appear."""
@@ -87,6 +132,10 @@ class Case:
     must_not: list[Expectation] = field(default_factory=list)
     #: What this case is actually testing, for the report.
     checks: str = ""
+    #: For skills whose output is not an operation list — a plan, a routing
+    #: decision, a layout, a verdict. Keys are read per skill by
+    #: `runner.check_decision`, and a test rejects any key it does not read.
+    expect: dict[str, Any] = field(default_factory=dict)
 
 
 def _edit(case_id: str, instruction: str, must, *, must_not=None, spec=None,
@@ -238,7 +287,163 @@ NARRATE_CASES: list[Case] = [
     ),
 ]
 
-ALL_CASES: list[Case] = [*EDIT_CASES, *GENERATE_CASES, *PLACE_CASES, *NARRATE_CASES]
+PLAN_CASES: list[Case] = [
+    Case(
+        id="plan-ranking",
+        skill="viz.plan",
+        instruction="which region brought in the most revenue?",
+        inputs={"question": "Which region brought in the most revenue?", "rows": REGION_ROWS},
+        expect={"chart_type": ("bar",)},
+        checks="a ranking question over one dimension and one measure is a bar",
+    ),
+    Case(
+        id="plan-single-value",
+        skill="viz.plan",
+        instruction="what is total revenue?",
+        inputs={"question": "What is total revenue?", "rows": TOTAL_ROWS},
+        expect={"chart_type": ("kpi",)},
+        checks="one number is a KPI, not a chart with a single bar",
+    ),
+    Case(
+        id="plan-rate-not-summed",
+        skill="viz.plan",
+        instruction="show completion rate by team",
+        inputs={"question": "Show completion rate by team", "rows": TEAM_RATE_ROWS},
+        expect={"no_sum_of": "completion_pct"},
+        checks="a rate is averaged, never summed — four teams added together is 314%",
+    ),
+    Case(
+        id="plan-quarter-labels",
+        skill="viz.plan",
+        instruction="how has NPS moved by quarter?",
+        inputs={"question": "How has NPS moved by quarter?", "rows": QUARTER_ROWS},
+        expect={"chart_type": ("line", "area", "bar")},
+        checks="quarter labels are ordered text; the plan should still reach a trend shape",
+    ),
+    Case(
+        id="plan-missing-column",
+        skill="viz.plan",
+        instruction="break revenue down by cost centre",
+        inputs={"question": "Break revenue down by cost centre", "rows": REGION_ROWS},
+        expect={"status": ("insufficient_data", "ambiguous")},
+        checks="THE important one: there is no cost centre. Planning revenue by region "
+               "instead answers a question nobody asked.",
+    ),
+]
+
+
+def _manage(case_id: str, instruction: str, expect: dict[str, Any], checks: str) -> Case:
+    return Case(
+        id=case_id,
+        skill="viz.manage",
+        instruction=instruction,
+        inputs={"instruction": instruction, "spec": BAR_SPEC, "rows": REGION_ROWS},
+        expect=expect,
+        checks=checks,
+    )
+
+
+MANAGE_CASES: list[Case] = [
+    _manage("manage-compound", "make it dark and sort descending",
+            {"actions": ["theme", "edit"]},
+            "keeps both halves, in order — the router alone drops one"),
+    _manage("manage-narrate-last", "what does this show and sort it descending",
+            {"actions": ["edit", "narrate"]},
+            "narration goes last, so it describes the chart the user ends up looking at"),
+    _manage("manage-unlabelled-edit", "can you make the biggest region stand out",
+            {"actions": ["edit"]},
+            "the rules cannot read it; the model must prefer an edit over a rebuild"),
+    _manage("manage-decline", "compare this with last year",
+            {"actions": ["decline"]},
+            "there is no prior period in the rows; declining beats charting the wrong thing"),
+    _manage("manage-widget", "build me a dashboard of revenue by region and orders by region",
+            {"widget_parts": 2},
+            "one widget step with two parts — the 'and' joins charts, not instructions"),
+    _manage("manage-ambiguous", "make it better",
+            {"status": "ambiguous"},
+            "genuinely unclear; guessing an action is worse than saying so"),
+]
+
+
+def _viz(identifier: str, spec: dict[str, Any], chart_type: str, question: str) -> dict[str, Any]:
+    return {"id": identifier, "spec": spec, "chart_type": chart_type, "question": question}
+
+
+COMPOSE_CASES: list[Case] = [
+    Case(
+        id="compose-reading-order",
+        skill="viz.compose",
+        instruction="a revenue overview",
+        inputs={
+            "ask": "a revenue overview",
+            "visualizations": [
+                _viz("tile_1", KPI_SPEC, "kpi", "What is total revenue?"),
+                _viz("tile_2", SORTED_BAR_SPEC, "bar", "Which region brought in the most?"),
+                _viz("tile_3", TABLE_SPEC, "table_with_cells", "Revenue by region, row by row"),
+            ],
+        },
+        expect={
+            "first": "tile_1",
+            "last": "tile_3",
+            "span": {"tile_1": ("quarter", "third", "half"), "tile_3": ("full",)},
+            "titled": True,
+        },
+        checks="the number first, the table last and full-width, and a title that "
+               "names the content",
+    ),
+    Case(
+        id="compose-every-chart-once",
+        skill="viz.compose",
+        instruction="compare revenue and orders across regions",
+        inputs={
+            "ask": "compare revenue and orders across regions",
+            "visualizations": [
+                _viz("tile_1", BAR_SPEC, "bar", "Revenue by region"),
+                _viz("tile_2", ORDERS_BAR_SPEC, "bar", "Orders by region"),
+                _viz("tile_3", SORTED_BAR_SPEC, "bar", "Regions ranked by revenue"),
+            ],
+        },
+        expect={"titled": True},
+        checks="every chart gets exactly one tile — none dropped as redundant, none invented",
+    ),
+]
+
+CRITIQUE_CASES: list[Case] = [
+    Case(
+        id="critique-wrong-question",
+        skill="viz.critique",
+        instruction="How has revenue changed over time?",
+        inputs={"question": "How has revenue changed over time?", "spec": BAR_SPEC,
+                "rows": REGION_ROWS},
+        expect={"answers_question": False},
+        checks="revenue by region cannot answer a question about time, and the "
+               "complaint has to say so",
+    ),
+    Case(
+        id="critique-total-for-comparison",
+        skill="viz.critique",
+        instruction="How does revenue compare across regions?",
+        inputs={"question": "How does revenue compare across regions?",
+                "spec": TOTAL_TEXT_SPEC, "rows": REGION_ROWS},
+        expect={"answers_question": False},
+        checks="one total hides exactly the comparison it was asked for",
+    ),
+    Case(
+        id="critique-right-chart",
+        skill="viz.critique",
+        instruction="Which region brought in the most revenue?",
+        inputs={"question": "Which region brought in the most revenue?",
+                "spec": SORTED_BAR_SPEC, "rows": REGION_ROWS},
+        expect={"answers_question": True},
+        checks="a sorted bar answers a ranking question — a critic that rejects "
+               "everything is a cost with no benefit",
+    ),
+]
+
+ALL_CASES: list[Case] = [
+    *EDIT_CASES, *GENERATE_CASES, *PLACE_CASES, *NARRATE_CASES,
+    *PLAN_CASES, *MANAGE_CASES, *COMPOSE_CASES, *CRITIQUE_CASES,
+]
 
 
 def cases_for(skill: str = "") -> list[Case]:

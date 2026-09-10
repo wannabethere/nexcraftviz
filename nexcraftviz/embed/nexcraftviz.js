@@ -156,8 +156,16 @@ class NexcraftvizChat extends HTMLElement {
 
   get endpoint() { return this.getAttribute('endpoint') || ''; }
   get mode() { return this.getAttribute('mode') || 'hosted'; }
+  /** NEXCRAFTVIZ_API_TOKEN, when the server requires one. Read once, when the
+   *  client is first built — so set it before the element connects. */
+  get apiKey() { return this.getAttribute('api-key') || ''; }
   get client() {
-    if (!this._client) this._client = new NexcraftvizClient(this.endpoint);
+    if (!this._client) {
+      // Its own header rather than `Authorization`, which a host page may
+      // already be using for its own session.
+      const headers = this.apiKey ? { 'x-nexcraftviz-key': this.apiKey } : {};
+      this._client = new NexcraftvizClient(this.endpoint, { headers });
+    }
     return this._client;
   }
   get state() { return this._state; }

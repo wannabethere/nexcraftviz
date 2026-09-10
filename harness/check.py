@@ -111,6 +111,7 @@ def check_environment() -> CheckReport:
         _check_key(),
         _check_agents(),
         _check_retrieval(),
+        _check_auth(),
     ])
 
 
@@ -280,4 +281,17 @@ def _check_retrieval() -> Check:
         f"qdrant asked for but unavailable ({'; '.join(state['reasons']) or 'unknown'}) "
         f"— falling back to lexical matching",
         fix="export QDRANT_URL=...  (or unset NEXCRAFTVIZ_RETRIEVAL to use lexical)",
+    )
+
+
+def _check_auth() -> Check:
+    """Whether the API needs a token. Never a blocker — open is fine on
+    localhost — but it is the first thing to fix before a server is shared."""
+    if os.getenv("NEXCRAFTVIZ_API_TOKEN", "").strip():
+        return Check("auth", "ok", "token required on /v1/* (health excepted)")
+    return Check(
+        "auth", "degraded",
+        "the API is open — fine on localhost, not on a shared box",
+        fix="export NEXCRAFTVIZ_API_TOKEN=$(python3 -c "
+            "'import secrets; print(secrets.token_urlsafe(32))')",
     )

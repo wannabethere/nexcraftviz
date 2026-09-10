@@ -224,6 +224,33 @@ chart types the corpus covers and names the renderer, so a consumer never
 hardcodes the list. A spec the consumer cannot draw is refused rather than
 handed over to render as a blank rectangle.
 
+### Auth
+
+Open by default, which is fine on a laptop. Before a server is shared:
+
+```bash
+export NEXCRAFTVIZ_API_TOKEN=$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')
+```
+
+Every `/v1` route except `/v1/health` then needs it, sent either way:
+
+```
+Authorization: Bearer <token>
+X-Nexcraftviz-Key: <token>
+```
+
+The second header exists because a browser caller's `Authorization` is usually
+already spoken for — Lexy sends its own session JWT there, and one header cannot
+carry two tokens. CORS preflight never needs the token, and a refusal still
+carries CORS headers, so a browser reports the real 401 rather than an opaque
+CORS failure. `serve` prints whether auth is on, and warns when it is listening
+beyond localhost without it.
+
+A key compiled into a browser bundle (`REACT_APP_NEXCRAFTVIZ_KEY`, or the embed's
+`api-key` attribute) is readable by every user who loads the page. That is fine
+for internal testing. In production it is not a secret, and the host's backend
+should call nexcraftviz on the user's behalf.
+
 ### The manager
 
 `annotate` takes free text, and one sentence can mean several things:

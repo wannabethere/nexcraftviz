@@ -86,8 +86,18 @@ async def run_case(case: Case, llm: LLMRunner) -> CaseResult:
     result = CaseResult(case=case)
     skill = get(case.skill)
 
+    # Keep the model's own answer. Several skills repair it in `apply` — filling
+    # blanks from the rules, appending a chart the model forgot — and grading
+    # the repaired result would pass a model that said nothing at all.
+    captured: dict[str, Any] = {}
+
+    async def recording(system: str, user: str, schema: dict[str, Any]) -> Any:
+        payload, meta = await llm(system, user, schema)
+        captured["payload"] = payload
+        return payload, meta
+
     try:
-        outcome = await skill.run(case.inputs, llm=llm)
+        outcome = await skill.run(case.inputs, llm=recording)
     except Exception as exc:  # noqa: BLE001 — a provider failure is a case failure
         result.error = f"{type(exc).__name__}: {exc}"
         return result
@@ -110,6 +120,13 @@ async def run_case(case: Case, llm: LLMRunner) -> CaseResult:
         if any(banned.matches(op) for op in result.emitted)
     ]
     result.decided_right = not result.missing and not result.forbidden
+
+    if case.skill in GRADED_RAW:
+        raw = skill.parse(captured.get("payload") or {})
+        result.emitted = _describe(raw)
+        problems = check_decision(case, raw)
+        result.notes.extend(problems)
+        result.decided_right = result.decided_right and not problems
 
     result.result_works, notes = _check_outcome(case, outcome)
     result.notes.extend(notes)
@@ -169,6 +186,112 @@ def _check_outcome(case: Case, outcome: Any) -> tuple[bool, list[str]]:
                     return False, [f"group {node.id!r} spans {total} of 12 — the row wraps"]
 
     return True, notes
+
+
+#: Skills whose `apply` repairs the model's answer, so they are graded on the
+#: raw payload instead. `viz.generate` is graded raw too, inside
+#: `_check_outcome`, for the same reason: tier-2 repair rewrites a bad
+#: `temporal` back to `nominal`.
+GRADED_RAW = frozenset({"viz.plan", "viz.manage", "viz.compose", "viz.critique"})
+
+#: The `expect` keys the scorer reads, per skill. A test asserts every case uses
+#: only these — a mistyped key would otherwise check nothing and pass forever.
+EXPECT_KEYS: dict[str, frozenset[str]] = {
+    "viz.plan": frozenset({"chart_type", "status", "no_sum_of"}),
+    "viz.manage": frozenset({"actions", "status", "widget_parts"}),
+    "viz.compose": frozenset({"span", "first", "last", "titled"}),
+    "viz.critique": frozenset({"answers_question"}),
+}
+
+#: Titles that name the container rather than what is in it.
+_GENERIC_TITLES = frozenset({"", "dashboard", "widget", "chart", "charts"})
+
+
+def check_decision(case: Case, raw: Any) -> list[str]:
+    """What the model decided, against what the case expects. Empty is a pass."""
+    expect = case.expect
+    problems: list[str] = []
+
+    if case.skill == "viz.plan":
+        allowed_status = tuple(expect.get("status", ("ok",)))
+        if raw.status not in allowed_status:
+            reason = f" — {raw.reason_if_not_ok}" if raw.reason_if_not_ok else ""
+            problems.append(
+                f"status {raw.status!r}, expected one of {list(allowed_status)}{reason}"
+            )
+        if raw.status == "ok":
+            columns = {key for row in case.inputs.get("rows") or [] for key in row}
+            invented = sorted(raw.fields_used() - columns)
+            if invented:
+                problems.append(f"planned fields the data does not have: {', '.join(invented)}")
+            allowed = expect.get("chart_type")
+            if allowed and raw.chart_type not in allowed:
+                problems.append(f"chart type {raw.chart_type!r}, expected one of {list(allowed)}")
+            summed = expect.get("no_sum_of")
+            if summed and any(e.field == summed and e.aggregate == "sum" for e in raw.encodings):
+                problems.append(f"sums {summed!r}, which is a rate — it should be averaged")
+
+    elif case.skill == "viz.manage":
+        actions = [step.action for step in raw.steps]
+        if "status" in expect and raw.status != expect["status"]:
+            problems.append(f"status {raw.status!r}, expected {expect['status']!r}")
+        if "actions" in expect and actions != list(expect["actions"]):
+            problems.append(f"actions {actions}, expected {list(expect['actions'])}")
+        if "widget_parts" in expect:
+            widgets = [step for step in raw.steps if step.action == "widget"]
+            if len(widgets) != 1:
+                problems.append(
+                    f"{len(widgets)} widget step(s), expected exactly one — got {actions}"
+                )
+            elif len(widgets[0].parts) != expect["widget_parts"]:
+                problems.append(
+                    f"widget parts {widgets[0].parts}, expected {expect['widget_parts']}"
+                )
+
+    elif case.skill == "viz.compose":
+        wanted = [v["id"] for v in case.inputs.get("visualizations") or []]
+        got = [tile.id for tile in raw.tiles]
+        duplicated = sorted({i for i in got if got.count(i) > 1})
+        invented = sorted(set(got) - set(wanted))
+        dropped = [i for i in wanted if i not in got]
+        if duplicated:
+            problems.append(f"tile(s) listed twice: {', '.join(duplicated)}")
+        if invented:
+            problems.append(f"invented tile(s): {', '.join(invented)}")
+        if dropped:
+            problems.append(f"dropped chart(s): {', '.join(dropped)}")
+        spans = {tile.id: tile.span for tile in raw.tiles}
+        for tile_id, allowed in (expect.get("span") or {}).items():
+            if spans.get(tile_id) not in allowed:
+                problems.append(
+                    f"{tile_id} spans {spans.get(tile_id)!r}, expected one of {list(allowed)}"
+                )
+        if "first" in expect and (not got or got[0] != expect["first"]):
+            problems.append(f"reading order starts {got[:1]}, expected {expect['first']!r}")
+        if "last" in expect and (not got or got[-1] != expect["last"]):
+            problems.append(f"reading order ends {got[-1:]}, expected {expect['last']!r}")
+        if expect.get("titled") and raw.title.strip().lower() in _GENERIC_TITLES:
+            problems.append(f"title {raw.title!r} names the container, not the content")
+
+    elif case.skill == "viz.critique":
+        wanted_verdict = expect.get("answers_question")
+        if wanted_verdict is not None and raw.answers_question != wanted_verdict:
+            said = f" — said: {raw.complaint}" if raw.complaint else ""
+            problems.append(
+                f"answers_question={raw.answers_question}, expected {wanted_verdict}{said}"
+            )
+        elif wanted_verdict is False and not raw.complaint.strip():
+            problems.append("rejected without a complaint — nothing a regeneration can act on")
+
+    return problems
+
+
+def _describe(raw: Any) -> list[dict[str, Any]]:
+    """The model's answer, for the report."""
+    steps = getattr(raw, "steps", None)
+    if steps is not None:
+        return [step.model_dump(mode="json") for step in steps]
+    return [raw.model_dump(mode="json", exclude={"telemetry"})]
 
 
 async def run(llm: LLMRunner, *, skill: str = "", model: str = "") -> Report:

@@ -94,9 +94,23 @@ el.onPropose = async ({ prompt, skill }) =&gt; {
 </main>
 
 <script type="module">
-import '../nexcraftviz/embed/nexcraftviz.js';
+// Where the API is. Served by `nexcraftviz serve` it is this page's own
+// origin; opened any other way, the default local port. `?endpoint=` overrides
+// both, and `?key=` supplies NEXCRAFTVIZ_API_TOKEN when the server needs one.
+const params = new URLSearchParams(location.search);
+const ENDPOINT = (params.get('endpoint')
+  || (location.pathname.startsWith('/playground/') ? location.origin : 'http://127.0.0.1:8180'))
+  .replace(/\/$/, '');
+const API_KEY = params.get('key') || '';
 
-const ENDPOINT = 'http://127.0.0.1:8180';
+// Point every chat element at it BEFORE the element is defined. The element
+// starts its session the moment it connects and has no way to notice an
+// attribute set afterwards, so the component is imported dynamically below,
+// after these are in place, rather than statically at the top of the module.
+for (const el of document.querySelectorAll('nexcraftviz-chat')) {
+  el.setAttribute('endpoint', ENDPOINT);
+  if (API_KEY) el.setAttribute('api-key', API_KEY);
+}
 const ROWS = [
   { region: 'West',  revenue: 128, orders: 41 },
   { region: 'East',  revenue: 96,  orders: 33 },
@@ -185,10 +199,20 @@ async function wire(el) {
 // Fail loudly and usefully when the API is not running — a silent empty widget
 // is the worst possible outcome for a demo.
 try {
+  // From the API itself, which always serves the component at /embed/. The
+  // relative path this page used before resolved only when the repository
+  // root was being served.
+  await import(`${ENDPOINT}/embed/nexcraftviz.js`);
   const health = await fetch(`${ENDPOINT}/v1/health`).then(r => r.json());
-  status.textContent = `API v${health.version} · hosted mode ${health.hosted_mode ? 'on' : 'off'} · this page drives the model itself`;
-  status.className = 'status good';
-  for (const el of document.querySelectorAll('nexcraftviz-chat')) await wire(el);
+  if (health.auth === 'token' && !API_KEY) {
+    // Say so, rather than letting every session call fail with a bare 401.
+    status.className = 'status bad';
+    status.textContent = 'This server requires a key — add ?key=<NEXCRAFTVIZ_API_TOKEN> to the URL.';
+  } else {
+    status.textContent = `API v${health.version} · hosted mode ${health.hosted_mode ? 'on' : 'off'} · this page drives the model itself`;
+    status.className = 'status good';
+    for (const el of document.querySelectorAll('nexcraftviz-chat')) await wire(el);
+  }
 } catch (error) {
   status.className = 'status bad';
   status.textContent = 'The API is not running. Start it with:  nexcraftviz serve';

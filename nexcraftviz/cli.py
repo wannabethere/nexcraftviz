@@ -411,6 +411,19 @@ def _cmd_serve(args: argparse.Namespace) -> int:
         print(f"  demo:   http://{args.host}:{args.port}/playground/")
     print(f"  embed:  http://{args.host}:{args.port}/embed/nexcraftviz.js")
     print(f"  tools:  http://{args.host}:{args.port}/v1/tools")
+    token_set = bool(os.getenv("NEXCRAFTVIZ_API_TOKEN", "").strip())
+    if token_set:
+        print("  auth:   token required on /v1/* (health excepted)")
+    else:
+        print("  auth:   OPEN — anyone who can reach this port can use it")
+        if args.host not in ("127.0.0.1", "localhost", "::1"):
+            print(
+                f"\nWARNING: listening on {args.host} with no NEXCRAFTVIZ_API_TOKEN set.\n"
+                "         Set one before sharing this server:\n"
+                "           export NEXCRAFTVIZ_API_TOKEN=$(python3 -c "
+                "'import secrets; print(secrets.token_urlsafe(32))')\n",
+                file=sys.stderr,
+            )
     if llm is None:
         print(f"  model:  none ({env.describe_provider()})")
         print("          /propose and /commit work; /turn returns 503")

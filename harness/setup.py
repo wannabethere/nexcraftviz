@@ -26,6 +26,11 @@ OPENAI_MODEL=gpt-5-mini
 # NEXCRAFTVIZ_FAST_MODEL=gpt-5-mini
 # NEXCRAFTVIZ_SMART_MODEL=gpt-5
 
+# Require a token on /v1/* before sharing a server. Callers send it as
+# `Authorization: Bearer <token>` or `X-Nexcraftviz-Key: <token>`. Generate one:
+#   python3 -c 'import secrets; print(secrets.token_urlsafe(32))'
+# NEXCRAFTVIZ_API_TOKEN=
+
 # Override the prompt directory to patch a prompt without a release.
 # NEXCRAFTVIZ_PROMPT_DIR=
 """

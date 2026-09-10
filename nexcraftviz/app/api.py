@@ -123,11 +123,57 @@ _NO_MODEL = (
 )
 
 
-def create_app(store: SessionStore | None = None, *, llm: Any = None) -> Any:
+#: Reachable without a token. A load balancer's health probe carries no
+#: credentials, and "is it up?" leaks nothing worth protecting.
+_OPEN_PATHS = frozenset({"/v1/health"})
+
+#: The header a browser caller can use when `Authorization` is already taken —
+#: Lexy sends its own session JWT there, and one header cannot carry two tokens.
+KEY_HEADER = "x-nexcraftviz-key"
+
+
+def _needs_token(method: str, path: str) -> bool:
+    """Everything under /v1 except the health probe.
+
+    CORS preflight is exempt: a browser sends OPTIONS with no credentials by
+    design, so requiring one there fails every cross-origin call before the real
+    request is ever made. The static playground, theme assets and embed script
+    are outside /v1 and stay open — they are files, not an API.
+    """
+    if method == "OPTIONS":
+        return False
+    return path.startswith("/v1/") and path not in _OPEN_PATHS
+
+
+def _token_matches(headers: Any, expected: str) -> bool:
+    """Either header may carry it; both are checked in constant time."""
+    import hmac
+
+    presented: list[str] = []
+    authorization = headers.get("authorization", "")
+    if authorization[:7].lower() == "bearer ":
+        presented.append(authorization[7:].strip())
+    key = headers.get(KEY_HEADER, "").strip()
+    if key:
+        presented.append(key)
+    target = expected.encode()
+    return any(hmac.compare_digest(value.encode(), target) for value in presented)
+
+
+def create_app(
+    store: SessionStore | None = None,
+    *,
+    llm: Any = None,
+    api_token: str | None = None,
+) -> Any:
     """Build the FastAPI app.
 
     ``llm`` enables hosted mode. Left as None, propose/commit still work
     perfectly — which is the point of splitting them.
+
+    ``api_token`` (default: ``NEXCRAFTVIZ_API_TOKEN``) makes every /v1 route
+    except the health probe require it. Unset, the API is open — fine on
+    localhost, and ``serve`` says so loudly when it is listening anywhere else.
     """
     try:
         from fastapi import FastAPI, HTTPException
@@ -140,6 +186,31 @@ def create_app(store: SessionStore | None = None, *, llm: Any = None) -> Any:
 
     sessions = store or SessionStore()
     app = FastAPI(title="nexcraftviz", version=__version__)
+
+    token = (api_token if api_token is not None
+             else os.getenv("NEXCRAFTVIZ_API_TOKEN", "")).strip()
+
+    if token:
+        from fastapi.responses import JSONResponse
+
+        # Registered BEFORE the CORS middleware on purpose: Starlette makes the
+        # last-added middleware the outermost, so CORS wraps this one and a 401
+        # still carries the CORS headers. The other way round, a browser reports
+        # an opaque CORS failure and nobody learns the real problem was the key.
+        @app.middleware("http")
+        async def require_token(request: Any, call_next: Any) -> Any:
+            if _needs_token(request.method, request.url.path) and not _token_matches(
+                request.headers, token
+            ):
+                return JSONResponse(
+                    status_code=401,
+                    content={"detail": (
+                        "this server requires a token: send `Authorization: Bearer "
+                        f"<token>` or `{KEY_HEADER}: <token>`"
+                    )},
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+            return await call_next(request)
 
     # An embed is cross-origin by definition. Restrict this in a deployment —
     # NEXCRAFTVIZ_ALLOW_ORIGINS is a comma-separated list.
@@ -165,6 +236,7 @@ def create_app(store: SessionStore | None = None, *, llm: Any = None) -> Any:
             "status": "ok",
             "version": __version__,
             "hosted_mode": llm is not None,
+            "auth": "token" if token else "open",
             "sessions": len(sessions),
         }
 

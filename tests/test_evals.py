@@ -55,9 +55,24 @@ def test_every_case_can_be_prepared() -> None:
             assert case.inputs["widget"] is not None
 
 
-def test_the_skills_under_test_are_the_model_backed_ones() -> None:
+def test_every_model_backed_skill_has_eval_cases() -> None:
+    """Derived from the registry, not listed. The hard-coded version kept
+    passing after four new model-backed skills landed with no cases at all — a
+    coverage guard that stopped guarding on exactly the day it was needed."""
+    from nexcraftviz.skills import REGISTRY
+
+    model_backed = {name for name, skill in REGISTRY.items() if skill.spec.uses_llm}
     covered = {c.skill for c in ALL_CASES}
-    assert covered == {"viz.edit", "viz.generate", "viz.place", "viz.narrate"}
+    assert model_backed <= covered, f"no eval cases for: {sorted(model_backed - covered)}"
+
+
+def test_expectation_keys_are_ones_the_scorer_reads() -> None:
+    """A mistyped `expect` key checks nothing and passes forever."""
+    from nexcraftviz.evals.runner import EXPECT_KEYS
+
+    for case in ALL_CASES:
+        unknown = set(case.expect) - EXPECT_KEYS.get(case.skill, frozenset())
+        assert not unknown, f"{case.id}: {sorted(unknown)}"
 
 
 # ---------------------------------------------------------------------------
@@ -194,3 +209,200 @@ async def test_live_prompts() -> None:
     report = await run(openai_runner())
     print("\n" + report.render())
     assert report.passed == report.total, report.render()
+
+
+
+# ---------------------------------------------------------------------------
+# the scorer discriminates — plans, routing, layouts, verdicts
+# ---------------------------------------------------------------------------
+
+def _case(case_id: str):
+    return next(c for c in cases_for() if c.id == case_id)
+
+
+def _plan(chart_type: str, encodings: list[tuple[str, str, str]], *, status: str = "ok"):
+    return {
+        "status": status,
+        "reason_if_not_ok": "" if status == "ok" else "the data has no such column",
+        "confidence": 0.8, "chart_type": chart_type, "alternatives": [], "rationale": "",
+        "encodings": [
+            {"channel": c, "field": f, "aggregate": a, "sort": "", "why": ""}
+            for c, f, a in encodings
+        ],
+        "transforms": [], "styling": {}, "metadata": {}, "follow_ups": [],
+    }
+
+
+def _decision(*steps: dict, status: str = "ok"):
+    return {"status": status, "reason_if_not_ok": "", "declined": [], "steps": list(steps)}
+
+
+def _step(action: str, instruction: str, parts: list[str] | None = None):
+    return {"action": action, "instruction": instruction, "why": "", "parts": parts or []}
+
+
+def _design(tiles: list[tuple[str, str]], *, title: str = "Revenue overview"):
+    return {
+        "status": "ok", "reason_if_not_ok": "", "title": title, "description": "",
+        "layout": "grid",
+        "tiles": [{"id": i, "title": i, "span": s, "note": ""} for i, s in tiles],
+        "groups": [], "concerns": [],
+    }
+
+
+def _verdict(answers: bool, complaint: str = ""):
+    return {"answers_question": answers, "score": 0.5, "complaint": complaint, "suggestion": ""}
+
+
+async def test_a_plan_with_the_right_chart_passes() -> None:
+    result = await run_case(
+        _case("plan-ranking"),
+        _stub(_plan("bar", [("x", "region", ""), ("y", "revenue", "sum")])),
+    )
+    assert result.ok, result.line()
+
+
+async def test_a_plan_with_the_wrong_chart_fails() -> None:
+    result = await run_case(
+        _case("plan-ranking"),
+        _stub(_plan("pie", [("theta", "revenue", "sum"), ("color", "region", "")])),
+    )
+    assert not result.ok
+    assert "chart type 'pie'" in result.line()
+
+
+async def test_a_summed_rate_fails_the_rate_case() -> None:
+    result = await run_case(
+        _case("plan-rate-not-summed"),
+        _stub(_plan("bar", [("x", "team", ""), ("y", "completion_pct", "sum")])),
+    )
+    assert not result.ok
+    assert "rate" in result.line()
+
+
+async def test_planning_a_substitute_fails_the_refusal_case() -> None:
+    """Revenue by region is a real chart of real columns. It is still the wrong
+    answer to "by cost centre", which is the point of the case."""
+    result = await run_case(
+        _case("plan-missing-column"),
+        _stub(_plan("bar", [("x", "region", ""), ("y", "revenue", "sum")])),
+    )
+    assert not result.ok
+
+
+async def test_declining_passes_the_refusal_case() -> None:
+    result = await run_case(
+        _case("plan-missing-column"), _stub(_plan("", [], status="insufficient_data"))
+    )
+    assert result.ok, result.line()
+
+
+async def test_both_halves_in_order_pass() -> None:
+    result = await run_case(
+        _case("manage-compound"),
+        _stub(_decision(_step("theme", "make it dark"), _step("edit", "sort descending"))),
+    )
+    assert result.ok, result.line()
+
+
+async def test_dropping_half_the_instruction_fails() -> None:
+    result = await run_case(
+        _case("manage-compound"), _stub(_decision(_step("theme", "make it dark")))
+    )
+    assert not result.ok
+
+
+async def test_an_empty_decision_fails_even_though_repair_would_fill_it() -> None:
+    """The rules would restore both steps in `apply`. Graded on the repaired
+    decision, a model that said nothing at all would pass."""
+    result = await run_case(_case("manage-compound"), _stub(_decision()))
+    assert not result.ok
+    assert "actions []" in result.line()
+
+
+async def test_narrating_first_fails() -> None:
+    result = await run_case(
+        _case("manage-narrate-last"),
+        _stub(_decision(_step("narrate", "what does this show"),
+                        _step("edit", "sort it descending"))),
+    )
+    assert not result.ok
+
+
+async def test_a_widget_without_parts_fails_even_though_repair_would_split_it() -> None:
+    result = await run_case(
+        _case("manage-widget"),
+        _stub(_decision(_step("widget", "build me a dashboard of revenue and orders"))),
+    )
+    assert not result.ok
+    assert "widget parts" in result.line()
+
+
+async def test_a_widget_with_its_parts_passes() -> None:
+    result = await run_case(
+        _case("manage-widget"),
+        _stub(_decision(_step("widget", "build me a dashboard",
+                              ["revenue by region", "orders by region"]))),
+    )
+    assert result.ok, result.line()
+
+
+async def test_a_complete_design_in_reading_order_passes() -> None:
+    result = await run_case(
+        _case("compose-reading-order"),
+        _stub(_design([("tile_1", "third"), ("tile_2", "two-thirds"), ("tile_3", "full")])),
+    )
+    assert result.ok, result.line()
+
+
+async def test_a_dropped_chart_fails_even_though_repair_would_append_it() -> None:
+    result = await run_case(
+        _case("compose-every-chart-once"),
+        _stub(_design([("tile_1", "half"), ("tile_2", "half")])),
+    )
+    assert not result.ok
+    assert "dropped chart(s): tile_3" in result.line()
+
+
+async def test_a_squeezed_table_fails() -> None:
+    result = await run_case(
+        _case("compose-reading-order"),
+        _stub(_design([("tile_1", "third"), ("tile_2", "third"), ("tile_3", "third")])),
+    )
+    assert not result.ok
+    assert "tile_3 spans 'third'" in result.line()
+
+
+async def test_a_generic_title_fails() -> None:
+    result = await run_case(
+        _case("compose-every-chart-once"),
+        _stub(_design([("tile_1", "third"), ("tile_2", "third"), ("tile_3", "third")],
+                      title="Dashboard")),
+    )
+    assert not result.ok
+
+
+async def test_a_critic_that_accepts_the_wrong_chart_fails() -> None:
+    result = await run_case(_case("critique-wrong-question"), _stub(_verdict(True)))
+    assert not result.ok
+
+
+async def test_a_rejection_without_a_complaint_fails() -> None:
+    result = await run_case(_case("critique-wrong-question"), _stub(_verdict(False)))
+    assert not result.ok
+    assert "without a complaint" in result.line()
+
+
+async def test_a_specific_rejection_passes() -> None:
+    result = await run_case(
+        _case("critique-wrong-question"),
+        _stub(_verdict(False, "the chart shows revenue by region; the question is about time")),
+    )
+    assert result.ok, result.line()
+
+
+async def test_a_critic_that_rejects_the_right_chart_fails() -> None:
+    result = await run_case(
+        _case("critique-right-chart"), _stub(_verdict(False, "could be prettier"))
+    )
+    assert not result.ok
