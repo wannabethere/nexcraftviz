@@ -408,6 +408,14 @@ COMPOSE_CASES: list[Case] = [
     ),
 ]
 
+COVERAGE_ROWS = [{"coverage_pct": 87.4, "target_pct": 90.0}]
+#: kpi_against_target, as the live generator delivered it.
+COVERAGE_TARGET_KPI = {"kpi_metadata": {
+    "chart_type": "metric_kpi", "chart_subtype": "target_vs_actual",
+    "label": "Compliance coverage", "unit": "%", "value": 87.4, "target": 90.0,
+    "value_field": "coverage_pct", "target_field": "target_pct",
+}}
+
 CRITIQUE_CASES: list[Case] = [
     Case(
         id="critique-wrong-question",
@@ -437,6 +445,16 @@ CRITIQUE_CASES: list[Case] = [
         expect={"answers_question": True},
         checks="a sorted bar answers a ranking question — a critic that rejects "
                "everything is a cost with no benefit",
+    ),
+    Case(
+        id="critique-data-it-has",
+        skill="viz.critique",
+        instruction="Are we on track for the compliance coverage target?",
+        inputs={"question": "Are we on track for the compliance coverage target?",
+                "spec": COVERAGE_TARGET_KPI, "rows": COVERAGE_ROWS},
+        expect={"answers_question": True},
+        checks="the rows hold a value and its target and nothing else; live, the "
+               "critic twice demanded a trend nobody had, and a redraw cannot add one",
     ),
 ]
 

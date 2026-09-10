@@ -108,3 +108,26 @@ def _has_title(value: Any) -> bool:
     if isinstance(value, dict):
         return _has_title(value.get("text"))
     return False
+
+
+def lift_title(raw: dict[str, Any]) -> tuple[dict[str, Any], str, str]:
+    """``raw`` without its top-level title, plus the title's text and subtitle.
+
+    For hosts whose card header already shows the title — lexy_ui's dashboard
+    tiles — where a title drawn inside the chart as well says it twice. Only
+    the top level moves: a panel's own title inside a concat labels that panel.
+    The input is not modified.
+    """
+    if "title" not in raw:
+        return raw, "", ""
+    title = raw["title"]
+    rest = {key: value for key, value in raw.items() if key != "title"}
+    if isinstance(title, dict):
+        return rest, _flat(title.get("text")), _flat(title.get("subtitle"))
+    return rest, _flat(title), ""
+
+
+def _flat(value: Any) -> str:
+    if isinstance(value, list):
+        return " ".join(str(part) for part in value if part)
+    return value.strip() if isinstance(value, str) else ""

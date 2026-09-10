@@ -103,6 +103,36 @@ class GenerateOut(BaseModel):
     reasoning: str = ""
 
 
+def _bind_rows(spec: Spec, rows: list[dict[str, Any]]) -> list[str]:
+    """Bind ``rows`` at the root and drop inline copies of the dataset below it.
+
+    A layer's own data is dropped — so it inherits the real rows — when it
+    looks like the dataset: more than one row, every key a real column. A
+    one-row constant, such as a threshold line's value, is a design choice and
+    stays.
+    """
+    notes: list[str] = []
+    columns = set().union(*(row.keys() for row in rows))
+    written = spec.data_values
+    if written and written != rows:
+        notes.append(f"drew the {len(rows)} row(s) given, not the {len(written)} "
+                     "the model wrote into the spec")
+    spec.set_data_values(rows)
+    for view in spec.views():
+        if view.path == ():
+            continue
+        data = view.node.get("data")
+        values = data.get("values") if isinstance(data, dict) else None
+        if not isinstance(values, list) or len(values) < 2:
+            continue
+        keys = set().union(*(v.keys() for v in values if isinstance(v, dict)))
+        if keys and keys <= columns:
+            view.node.pop("data")
+            notes.append(f"dropped {len(values)} invented row(s) from "
+                         f"{'.'.join(str(step) for step in view.path)}")
+    return notes
+
+
 def chart_type_name(said: str, plan: Any = None) -> str:
     """The chart type as a name, not a description of one.
 
@@ -223,11 +253,11 @@ class GenerateSkill(Skill[GenerateIn, GenerateOut]):
         if spec.family == "kpi":
             return self._apply_kpi(spec, inputs, output, result, json_notes)
 
-        # Bind the rows the chart was generated for. The model is given a
-        # profile rather than the data, so it cannot embed the values itself —
-        # and a spec with no data renders nothing.
-        if inputs.rows and not spec.data_values:
-            spec.set_data_values(inputs.rows)
+        # The chart draws the rows it was given, whatever data the model wrote.
+        # It sees a profile, not the rows, so values it writes are its own:
+        # live, a trend spec arrived with Feb and Mar figures that were not in
+        # the data, and only the critic noticed.
+        bound = _bind_rows(spec, inputs.rows) if inputs.rows else []
         spec.ensure_schema_url()
 
         # Repair is on: a near-miss field name is the single most common
@@ -242,6 +272,7 @@ class GenerateSkill(Skill[GenerateIn, GenerateOut]):
         # After the reassignment above, or the note would be wiped.
         result.changes.extend(f"repaired the model's JSON: {note}" for note in json_notes)
         result.changes.extend(labelled)
+        result.changes.extend(bound)
         if json_notes:
             result.meta["json_repaired"] = json_notes
         result.meta["repaired"] = [*json_notes, *report.repaired]

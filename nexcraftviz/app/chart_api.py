@@ -20,6 +20,7 @@ from __future__ import annotations
 from typing import Any
 
 from nexcraftviz.data.profile import profile_rows
+from nexcraftviz.spec.labels import lift_title as _lift_title
 from nexcraftviz.spec.model import Spec
 
 #: What this surface can hand back. Vega-Lite only — the consumer's renderer
@@ -50,6 +51,7 @@ def envelope(
     declined: list[str] | None = None,
     degraded: list[str] | None = None,
     widget: Any = None,
+    lift_title: bool = False,
 ) -> dict[str, Any]:
     """One response shape for both calls.
 
@@ -60,6 +62,7 @@ def envelope(
     """
     degraded = list(degraded or [])
     schema: dict[str, Any] = {}
+    title = subtitle = ""
 
     if spec is not None and spec:
         family = spec.family
@@ -69,12 +72,18 @@ def envelope(
                 f"{family!r}, which the consumer cannot draw"
             )
         schema = spec.raw
+        if lift_title:
+            # lexy_ui's card header shows the title; drawn inside the chart as
+            # well, it appeared twice. It travels beside the chart instead.
+            schema, title, subtitle = _lift_title(schema)
         chart_type = chart_type or chart_type_of(spec)
 
     return {
         "chart_type": chart_type,
         "chart_schema": schema,
         "reasoning": reasoning,
+        "title": title,
+        "subtitle": subtitle,
         "renderer": RENDERER,
         # A widget is several charts arranged together, so it cannot be squeezed
         # into `chart_schema`. The markup is rendered here so the tile vocabulary
@@ -192,7 +201,7 @@ async def create_chart(
 
     spec = _themed(run.spec, theme)
     plan = run.stages.plan
-    return envelope(
+    result = envelope(
         spec,
         rows=rows,
         reasoning=(plan.rationale if plan else "") or run.trace[-1] if run.trace else "",
@@ -200,7 +209,12 @@ async def create_chart(
         plan=plan,
         verdict=run.stages.evaluate,
         actions=["create"],
+        lift_title=True,
     )
+    if not result["title"] and plan is not None:
+        result["title"] = plan.metadata.title
+        result["subtitle"] = result["subtitle"] or plan.metadata.subtitle
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -264,6 +278,7 @@ async def annotate_chart(
         declined=run.decision.declined,
         degraded=run.failures(),
         widget=widget,
+        lift_title=True,
         verdict=getattr(session.last_run, "stages", None)
         and session.last_run.stages.evaluate,
     ), session

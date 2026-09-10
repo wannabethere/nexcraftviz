@@ -322,13 +322,19 @@ def _tile(spec: Any, rows: list[dict[str, Any]], plan: Any) -> dict[str, Any]:
     ``{"values": rows}`` because that is what the consumer reads; getting either
     wrong produces a row that inserts cleanly and renders nothing.
     """
+    from nexcraftviz.spec.labels import lift_title
+
+    # The tile header shows `configuration.title`; the chart must not draw it
+    # again. What the chart was titled wins over the plan: an edit may have
+    # changed it since.
+    schema, title, subtitle = lift_title(spec.raw)
     return {
         "component_type": "chart",
-        "chart_schema": spec.raw,
+        "chart_schema": schema,
         "sample_data": {"values": rows or spec.data_values},
         "configuration": {
-            "title": (plan.metadata.title if plan else "") or "",
-            "subtitle": (plan.metadata.subtitle if plan else "") or "",
+            "title": title or (plan.metadata.title if plan else "") or "",
+            "subtitle": subtitle or (plan.metadata.subtitle if plan else "") or "",
             "chart_type": (plan.chart_type if plan else "") or spec.mark_summary,
         },
     }
