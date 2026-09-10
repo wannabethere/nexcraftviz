@@ -26,6 +26,7 @@ from typing import Any
 
 from nexcraftviz.agents.artifacts import ChartPlan, GateResult
 from nexcraftviz.data.profile import profile_rows
+from nexcraftviz.spec.kpi import kpi_fields
 from nexcraftviz.spec.model import Spec
 from nexcraftviz.spec.validate import validate
 
@@ -134,7 +135,7 @@ def _matches_plan(spec: Spec, *, plan: ChartPlan | None, rows: list[dict[str, An
     a layered spec whose base mark is a bar — but not about *what*: a planned
     field that never appears is the generator having ignored the plan.
     """
-    if plan is None or not plan.ok:
+    if plan is None or not plan.drawable:
         return GateResult(gate="matches_plan", passed=True, detail="no plan to check against")
 
     problems: list[str] = []
@@ -154,7 +155,7 @@ def _matches_plan(spec: Spec, *, plan: ChartPlan | None, rows: list[dict[str, An
         # transforms rename things; the code only looked at encodings, so a
         # correct top-N — sum `revenue` as `sum_revenue`, rank, filter — failed
         # for "missing revenue" twice in a live run, retry included.
-        built = {f for _, _, f in spec.field_refs()} | _transform_inputs(spec)
+        built = fields_read(spec)
         missing = sorted(planned_fields - built) if built else []
         if missing and len(missing) == len(planned_fields):
             problems.append(f"none of the planned fields appear: {', '.join(missing)}")
@@ -207,6 +208,17 @@ def _transform_inputs(spec: Spec) -> set[str]:
 
     walk(spec.raw)
     return found
+
+
+def fields_read(spec: Spec) -> set[str]:
+    """Every field the spec reads — in an encoding, or as a transform's input.
+
+    Public because "does this chart use that column?" is asked in more than one
+    place, and answering it by encodings alone was wrong twice: the matches_plan
+    gate and the harness grader both failed a correct top-N that sums `revenue`
+    as `sum_revenue`.
+    """
+    return {f for _, _, f in spec.field_refs()} | _transform_inputs(spec) | kpi_fields(spec)
 
 
 #: Which Vega marks satisfy a planned chart type. Only the unambiguous ones —
@@ -275,6 +287,12 @@ def _data_honesty(
                     f"{channel}: {field_name} is text (e.g. {sample!r}) encoded as temporal"
                 )
 
+        # Time running backwards. A trend read right to left turns every rise
+        # into a fall. Seen live: a planner asked for "the most useful view" of
+        # a monthly completion trend sorted it newest-first, twice.
+        if channel == "x" and definition.get("type") == "temporal" and _runs_backwards(definition):
+            problems.append(f"x: {field_name} runs newest-first — time reads left to right")
+
         # An identifier on a positional axis: rows are entities, the id labels
         # them and is not a value.
         if column is not None and column.role == "identifier" and channel in ("x", "y"):
@@ -288,6 +306,14 @@ def _data_honesty(
     if problems:
         return GateResult(gate="data_honesty", passed=False, detail="; ".join(problems[:3]))
     return GateResult(gate="data_honesty", passed=True)
+
+
+def _runs_backwards(definition: dict[str, Any]) -> bool:
+    sort = definition.get("sort")
+    if sort == "descending" or (isinstance(sort, dict) and sort.get("order") == "descending"):
+        return True
+    scale = definition.get("scale")
+    return isinstance(scale, dict) and scale.get("reverse") is True
 
 
 def _placeholder_labels(spec: Spec) -> list[str]:

@@ -8,6 +8,7 @@ answer every time.
 from __future__ import annotations
 
 import json
+import re
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -15,7 +16,9 @@ from pydantic import BaseModel, ConfigDict, Field
 from nexcraftviz.data.profile import profile_rows
 from nexcraftviz.recommend.rules import recommend as rules_recommend
 from nexcraftviz.skills.base import Skill, SkillResult, SkillSpec
-from nexcraftviz.spec.jsonfix import balance_brackets
+from nexcraftviz.spec.jsonfix import repair_json
+from nexcraftviz.spec.kpi import bind_kpi
+from nexcraftviz.spec.labels import label_chart
 from nexcraftviz.spec.model import Spec
 from nexcraftviz.spec.validate import validate
 from nexcraftviz.theme import apply_theme, available_themes, strip_hardcoded_colours
@@ -100,6 +103,32 @@ class GenerateOut(BaseModel):
     reasoning: str = ""
 
 
+def chart_type_name(said: str, plan: Any = None) -> str:
+    """The chart type as a name, not a description of one.
+
+    The model writes this field freely: a live run returned
+    "bar (horizontal, sorted)", which no caller branching on `bar` matches.
+    The plan's type wins when the text names it; otherwise the leading word.
+    """
+    text = (said or "").strip().lower()
+    planned = (plan.get("chart_type") if isinstance(plan, dict)
+               else getattr(plan, "chart_type", "")) or ""
+    if planned and (planned in text.replace(" ", "_") or not text):
+        return planned
+    match = re.match(r"[a-z][a-z_]*", text.replace(" ", "_"))
+    return match.group(0).rstrip("_") if match else text
+
+
+def _plan_title(plan: Any) -> str:
+    """The title the planner wrote, from a ChartPlan or its dict form."""
+    metadata = plan.get("metadata") if isinstance(plan, dict) else getattr(plan, "metadata", None)
+    title = (
+        metadata.get("title") if isinstance(metadata, dict)
+        else getattr(metadata, "title", "")
+    )
+    return title if isinstance(title, str) else ""
+
+
 class GenerateSkill(Skill[GenerateIn, GenerateOut]):
     """Question + rows → a Vega-Lite spec."""
 
@@ -137,7 +166,14 @@ class GenerateSkill(Skill[GenerateIn, GenerateOut]):
             chart_type = getattr(plan, "chart_type", "") or (
                 plan.get("chart_type", "") if isinstance(plan, dict) else ""
             )
-            payload["examples"] = _retrieve_examples(chart_type)
+            if chart_type == "kpi":
+                payload["examples"] = _kpi_examples(inputs.question, profile)
+                payload["instruction"] += (
+                    " This plan is a KPI: return a `kpi_metadata` payload as described "
+                    "under WHEN THE PLAN IS A KPI, naming the columns that hold its numbers."
+                )
+            else:
+                payload["examples"] = _retrieve_examples(chart_type)
         else:
             ranked = rules_recommend(profile, question=inputs.question)
             payload["recommendations"] = [
@@ -159,6 +195,7 @@ class GenerateSkill(Skill[GenerateIn, GenerateOut]):
         return json.dumps(payload, indent=2, default=str)
 
     def apply(self, inputs: GenerateIn, output: GenerateOut) -> SkillResult[GenerateOut]:
+        output.chart_type = chart_type_name(output.chart_type, inputs.plan)
         result: SkillResult[GenerateOut] = SkillResult(skill=self.spec.name, output=output)
 
         if not output.spec_json.strip():
@@ -173,7 +210,7 @@ class GenerateSkill(Skill[GenerateIn, GenerateOut]):
             # in a nested KPI spec; closing it has exactly one reading, and every
             # gate still runs on the result. What the balancer will not guess at
             # fails here, with the parse error, so a regeneration can fix it.
-            repaired, json_notes = balance_brackets(output.spec_json)
+            repaired, json_notes = repair_json(output.spec_json)
             if json_notes:
                 spec = Spec.from_json_lenient(repaired)
         if not spec:
@@ -182,6 +219,9 @@ class GenerateSkill(Skill[GenerateIn, GenerateOut]):
                 f"the model's spec was not valid JSON ({_json_error(output.spec_json)})",
             ))
             return result
+
+        if spec.family == "kpi":
+            return self._apply_kpi(spec, inputs, output, result, json_notes)
 
         # Bind the rows the chart was generated for. The model is given a
         # profile rather than the data, so it cannot embed the values itself —
@@ -193,17 +233,53 @@ class GenerateSkill(Skill[GenerateIn, GenerateOut]):
         # Repair is on: a near-miss field name is the single most common
         # failure here, and it is deterministically fixable.
         spec, report = validate(spec, data=inputs.rows, max_tier=3, repair=True)
+        # Every plan writes a title and none reached the spec; the corpus this
+        # adapts from blanks every axis title. See nexcraftviz.spec.labels.
+        labelled = label_chart(spec, title=_plan_title(inputs.plan))
         result.value = spec
         result.changes = [f"generated a {output.chart_type or spec.mark_summary} chart"]
         result.changes.extend(f"repaired {note}" for note in report.repaired)
         # After the reassignment above, or the note would be wiped.
         result.changes.extend(f"repaired the model's JSON: {note}" for note in json_notes)
+        result.changes.extend(labelled)
         if json_notes:
             result.meta["json_repaired"] = json_notes
         result.meta["repaired"] = [*json_notes, *report.repaired]
         result.warnings.extend(str(issue) for issue in report.errors)
         result.meta["valid"] = report.ok
         result.meta["chart_type"] = output.chart_type
+        if not report.ok:
+            result.failed.append(("viz.generate", report.summary()))
+        return result
+
+    def _apply_kpi(
+        self,
+        spec: Spec,
+        inputs: GenerateIn,
+        output: GenerateOut,
+        result: SkillResult[GenerateOut],
+        json_notes: list[str],
+    ) -> SkillResult[GenerateOut]:
+        """A KPI card: its numbers read from the data — see nexcraftviz.spec.kpi.
+
+        No `$schema`, no bound rows: a KPI payload is not a Vega spec, and
+        dressing it as one makes every host hand it to Vega, which draws a
+        number in the corner of an empty canvas.
+        """
+        notes, error = bind_kpi(spec, inputs.rows)
+        if error:
+            result.failed.append(("viz.generate", error))
+            return result
+        meta = spec.raw["kpi_metadata"]
+        if not meta.get("label"):
+            meta["label"] = _plan_title(inputs.plan)
+        spec, report = validate(spec, data=inputs.rows, max_tier=1)
+        result.value = spec
+        result.changes = [f"generated a {meta.get('chart_subtype', 'counter')} KPI card", *notes]
+        result.changes.extend(f"repaired the model's JSON: {note}" for note in json_notes)
+        result.meta["repaired"] = list(json_notes)
+        result.meta["valid"] = report.ok
+        result.meta["chart_type"] = output.chart_type or "kpi"
         if not report.ok:
             result.failed.append(("viz.generate", report.summary()))
         return result
@@ -216,6 +292,50 @@ def _json_error(text: str) -> str:
     except json.JSONDecodeError as exc:
         return str(exc)
     return "unreadable"
+
+
+def _kpi_examples(question: str, profile: Any, limit: int = 3) -> list[dict[str, Any]]:
+    """The corpus KPI cards closest to this question, in the payload shape.
+
+    The corpus holds 22 KPI cards and none carries a Vega spec, so the generic
+    lookup — which keeps only pairs that do — handed a KPI plan nothing, and the
+    generator improvised a bare text mark. These are the real thing: the
+    best-arguing card first, then one of each other subtype the corpus has.
+    """
+    try:
+        from nexcraftviz.corpus.loader import seed
+        from nexcraftviz.recommend.precedent import precedents
+
+        pairs = [p for p in seed().by_chart_type("kpi") if _kpi_schema(p)]
+        best = next((p.example for p in precedents(profile, question=question)
+                     if p.chart_type == "kpi"), "")
+    except Exception:  # noqa: BLE001 — a missing corpus must not break generation
+        return []
+
+    pairs.sort(key=lambda pair: pair.name != best)
+    chosen: list[Any] = []
+    for pair in pairs:
+        subtype = _kpi_schema(pair).get("chart_subtype")
+        if all(_kpi_schema(c).get("chart_subtype") != subtype for c in chosen):
+            chosen.append(pair)
+    examples = []
+    for pair in chosen[:limit]:
+        card = {k: v for k, v in _kpi_schema(pair).items()
+                if k not in ("value", "change_pct", "change_direction")}
+        # The corpus writes its numbers in; a generated card names its columns.
+        card["value_field"] = "value"
+        examples.append({"name": pair.name, "use_when": pair.use_when,
+                         "kpi_metadata": card})
+    return examples
+
+
+def _kpi_schema(pair: Any) -> dict[str, Any]:
+    raw = pair.columns_schema
+    try:
+        parsed = json.loads(raw) if isinstance(raw, str) else raw
+    except ValueError:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
 
 
 def _retrieve_examples(chart_type: str, limit: int = 2) -> list[dict[str, Any]]:

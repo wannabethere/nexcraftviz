@@ -71,3 +71,25 @@ scenarios:
       - {total_revenue: 447.0}
     expect_fields: []
     require_gates: [validates]
+
+  kpi_against_last_quarter:
+    question: "How is revenue this quarter against last quarter?"
+    note: >
+      One number with its comparison. The change and its arrow are only
+      possible because the data carries the prior period — and must be
+      computed from it, never typed in by the model.
+    rows:
+      - {revenue_this_quarter: 447.0, revenue_last_quarter: 402.0}
+    expect_chart_type: [kpi]
+    expect_fields: [revenue_this_quarter, revenue_last_quarter]
+    require_gates: [validates, matches_plan]
+
+  kpi_against_target:
+    question: "Are we on track for the compliance coverage target?"
+    note: >
+      A value and its target: the target-vs-actual card, with its track.
+    rows:
+      - {coverage_pct: 87.4, target_pct: 90.0}
+    expect_chart_type: [kpi]
+    expect_fields: [coverage_pct, target_pct]
+    require_gates: [validates, matches_plan]

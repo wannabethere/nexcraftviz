@@ -141,7 +141,7 @@ class GeneratorAgent(SkillAgent):
             "language": ctx.language,
             "complaint": ctx.complaint,
         }
-        if plan is not None and plan.ok:
+        if plan is not None and plan.drawable:
             payload["plan"] = plan
             # The plan already settled the type; passing it again as
             # `chart_type` would let a disagreement between the two fields

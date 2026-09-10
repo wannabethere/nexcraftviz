@@ -148,6 +148,19 @@ class ChartPlan(BaseModel):
     def ok(self) -> bool:
         return self.status == "ok"
 
+    @property
+    def drawable(self) -> bool:
+        """``ok``, or ``ambiguous`` with the conservative reading planned.
+
+        viz.plan's rule 6 asks for exactly that plan when a question has two
+        readings. Treating it as a stop delivered no chart and no reason — live,
+        widget_entity_rows — so a plan with a chart type and encodings is drawn,
+        and the run says it was ambiguous.
+        """
+        return self.status == "ok" or (
+            self.status == "ambiguous" and bool(self.chart_type) and bool(self.encodings)
+        )
+
     def derived_fields(self) -> set[str]:
         """Fields the plan's own transforms CREATE — outputs, not columns.
 

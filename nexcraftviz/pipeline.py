@@ -177,6 +177,13 @@ async def run_pipeline(
             return _finish(run, started)
 
         await _deliver(ctx, run, registry)
+        plan = run.stages.plan
+        if plan is not None and plan.status == "ambiguous" and run.status == "ok":
+            # Drawn, and delivered with the caveat — the caller shows the chart
+            # and the other reading, rather than nothing.
+            run.status = "ambiguous"
+            run.reason = (plan.reason_if_not_ok
+                          or "the planner saw more than one reading of the question")
     except (StageError, SkillError) as exc:
         # A stage that could not run at all — wiring, or the model provider
         # failing — or a model answer that could not be read. Distinct from a
@@ -199,11 +206,13 @@ async def _plan(ctx: StageContext, run: ChartRun, registry: AgentRegistry) -> No
     plan = await registry.get("planner").run(ctx)
     run.stages.plan = plan
     run.trace.append(f"plan: {plan.summary()}")
-    if not plan.ok:
+    if not plan.drawable:
         # An unplannable question is a legitimate outcome, not an error: the
         # data genuinely may not answer it. Say which, and stop.
         run.status = plan.status
         run.reason = plan.reason_if_not_ok
+    elif not plan.ok:
+        run.trace.append("plan is ambiguous — drawing the conservative reading")
 
 
 async def _generate(ctx: StageContext, run: ChartRun, registry: AgentRegistry) -> None:

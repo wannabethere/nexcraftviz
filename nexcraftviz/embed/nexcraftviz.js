@@ -118,6 +118,20 @@ const STYLES = `
   text-align: center;
 }
 .chart { display: block; width: 100%; }
+.kpi { display: grid; gap: 6px; justify-items: start; padding: 24px; }
+.kpi__label { color: var(--nxv-text-secondary, #475569); font-size: var(--nxv-size-sm, 12px); }
+.kpi__value { color: var(--nxv-text, #0f172a); font-size: var(--nxv-size-display, 40px);
+  font-weight: var(--nxv-weight-bold, 700); line-height: 1.05; font-variant-numeric: tabular-nums; }
+.kpi__unit { color: var(--nxv-text-secondary, #475569); font-size: 0.5em; margin-left: 4px; }
+.kpi__delta { font-size: var(--nxv-size-sm, 12px); font-weight: 600; }
+.kpi__delta--up { color: var(--nxv-positive, #15803d); }
+.kpi__delta--down { color: var(--nxv-negative, #b91c1c); }
+.kpi__delta--flat { color: var(--nxv-text-muted, #94a3b8); }
+.kpi__track { background: var(--nxv-surface-alt, #f1f5f9); border-radius: 3px; height: 6px; overflow: hidden; width: 220px; }
+.kpi__fill { display: block; height: 100%; }
+.kpi__fill--over { background: var(--nxv-positive, #15803d); }
+.kpi__fill--under { background: var(--nxv-warning, #b45309); }
+.kpi__target { color: var(--nxv-text-muted, #94a3b8); font-size: 11px; }
 .log { border-top: 1px solid var(--nxv-border, #e2e8f0); max-height: 156px; overflow: auto; padding: 8px 16px; }
 .msg { display: flex; gap: 8px; padding: 4px 0; }
 .msg__who { color: var(--nxv-text-muted, #94a3b8); flex: 0 0 auto; font-size: 11px; padding-top: 2px; width: 56px; }
@@ -141,6 +155,36 @@ button[disabled] { cursor: default; opacity: 0.5; }
 button.ghost { background: transparent; border: 1px solid var(--nxv-border-strong, #cbd5e1); color: inherit; }
 .busy { color: var(--nxv-text-muted, #94a3b8); font-size: 11px; padding: 4px 16px; }
 `;
+
+const ARROWS = { up: '\u25B2', down: '\u25BC', flat: '\u2014' };
+
+function esc(value) {
+  return String(value).replace(/[&<>"']/g, (c) => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+/** A `kpi_metadata` payload as a card — the markup of render/html.py:render_kpi. */
+function kpiCard(meta) {
+  const value = typeof meta.value === 'number' ? meta.value.toLocaleString() : (meta.value ?? '');
+  const unit = meta.unit ? `<span class="kpi__unit">${esc(meta.unit)}</span>` : '';
+  let extra = '';
+  if (typeof meta.target === 'number' && typeof meta.value === 'number') {
+    const pct = Math.max(0, Math.min(100, (meta.value / Math.max(meta.target, 1)) * 100));
+    const tone = meta.value >= meta.target ? 'over' : 'under';
+    extra += `<span class="kpi__track"><span class="kpi__fill kpi__fill--${tone}" `
+      + `style="width:${pct.toFixed(1)}%"></span></span>`
+      + `<span class="kpi__target">target ${esc(meta.target)}${esc(meta.unit || '')}</span>`;
+  }
+  if (meta.change_pct != null && meta.change_direction) {
+    const good = meta.invert_sentiment
+      ? meta.change_direction === 'down' : meta.change_direction === 'up';
+    const tone = meta.change_direction === 'flat' ? 'flat' : (good ? 'up' : 'down');
+    extra += `<span class="kpi__delta kpi__delta--${tone}">`
+      + `${ARROWS[meta.change_direction] || ARROWS.flat} ${Math.abs(meta.change_pct).toFixed(1)}%</span>`;
+  }
+  return `<div class="kpi"><span class="kpi__label">${esc(meta.label || '')}</span>`
+    + `<span class="kpi__value">${esc(value)}${unit}</span>${extra}</div>`;
+}
 
 class NexcraftvizChat extends HTMLElement {
   static get observedAttributes() { return ['endpoint', 'session-id', 'mode', 'placeholder']; }
@@ -309,6 +353,13 @@ class NexcraftvizChat extends HTMLElement {
           if (spec) embed(node, spec, { actions: false }).catch(() => {});
         });
       });
+      return;
+    }
+
+    if (state.document.kpi_metadata) {
+      // A KPI is card furniture, not a Vega spec. Handed to Vega it drew a
+      // number in the corner of an empty canvas.
+      host.innerHTML = kpiCard(state.document.kpi_metadata);
       return;
     }
 

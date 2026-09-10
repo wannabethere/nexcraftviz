@@ -196,3 +196,47 @@ def test_setup_creates_a_root_it_was_pointed_at(tmp_path):
     target = tmp_path / "fresh" / "project"
     setup_environment(target)
     assert (target / ".env").exists()
+
+
+def test_an_expected_field_read_by_a_transform_counts():
+    """Found live: ranked_categories and top_n_is_honoured drew correct charts —
+    summing `revenue` as `sum_revenue` — and the grader failed both for
+    "fields absent from the spec: revenue"."""
+    from harness.run import Scenario, _grade
+    from nexcraftviz.agents.artifacts import ChartStages, GenerateArtifact
+    from nexcraftviz.pipeline import ChartRun
+    from nexcraftviz.spec.model import Spec
+
+    rows = [{"region": "North", "revenue": 152.0}, {"region": "West", "revenue": 128.0}]
+    spec = Spec({
+        "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+        "data": {"values": rows},
+        "transform": [{"aggregate": [{"op": "sum", "field": "revenue", "as": "sum_revenue"}],
+                       "groupby": ["region"]}],
+        "mark": "bar",
+        "encoding": {"y": {"field": "region", "type": "nominal"},
+                     "x": {"field": "sum_revenue", "type": "quantitative"}},
+    })
+    run = ChartRun(stages=ChartStages(generate=GenerateArtifact(spec=spec, chart_type="bar")))
+    scenario = Scenario(name="t", question="q", rows=rows, expect_fields=["revenue", "region"])
+    result = _grade(scenario, run, offline=False)
+    assert result.passed, result.problems
+
+
+def test_an_expected_field_read_nowhere_still_fails():
+    from harness.run import Scenario, _grade
+    from nexcraftviz.agents.artifacts import ChartStages, GenerateArtifact
+    from nexcraftviz.pipeline import ChartRun
+    from nexcraftviz.spec.model import Spec
+
+    rows = [{"region": "North", "revenue": 152.0, "orders": 4}]
+    spec = Spec({
+        "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+        "data": {"values": rows}, "mark": "bar",
+        "encoding": {"y": {"field": "region", "type": "nominal"},
+                     "x": {"field": "revenue", "type": "quantitative"}},
+    })
+    run = ChartRun(stages=ChartStages(generate=GenerateArtifact(spec=spec, chart_type="bar")))
+    scenario = Scenario(name="t", question="q", rows=rows, expect_fields=["orders"])
+    result = _grade(scenario, run, offline=False)
+    assert not result.passed and "orders" in result.problems[0]

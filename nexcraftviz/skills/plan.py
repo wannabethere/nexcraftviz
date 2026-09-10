@@ -91,6 +91,7 @@ class PlanSkill(Skill[PlanIn, ChartPlan]):
 
         if not plan.ok:
             result.warnings.append(f"{plan.status}: {plan.reason_if_not_ok}")
+        if not plan.drawable:
             return result
 
         # A plan naming a column that does not exist produces a chart that

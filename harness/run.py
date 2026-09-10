@@ -176,7 +176,12 @@ def _grade(scenario: Scenario, run: ChartRun, *, offline: bool = False) -> Scena
                 f"chart type {built!r}, expected one of {scenario.expect_chart_type}"
             )
 
-        present = {field_name for _, _, field_name in run.spec.field_refs()}
+        # Wherever the spec reads it — an encoding, or a transform's input. A
+        # correct top-N sums `revenue` as `sum_revenue`; counting encodings
+        # alone failed it here, as it once failed the matches_plan gate.
+        from nexcraftviz.evaluate.gates import fields_read
+
+        present = fields_read(run.spec)
         missing = [f for f in scenario.expect_fields if f not in present]
         if missing:
             problems.append(f"fields absent from the spec: {', '.join(missing)}")
