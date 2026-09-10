@@ -5,8 +5,8 @@ things:
 
 * **Tier 1 — structural.** Microseconds, no deps. "Is there anything here that
   a renderer could possibly draw?" This is the check the upstream
-  ``chart/utils/postprocess.is_structurally_valid`` performs, ported so the
-  genieml adapter keeps identical accept/reject behaviour.
+  ``is_structurally_valid`` predicate performs, ported so an adapter for that
+  upstream keeps identical accept/reject behaviour.
 * **Tier 2 — data binding.** Microseconds, no deps. "Does every field this spec
   references actually exist in the data, with a compatible type?" This is the
   one that matters most in practice: an LLM that invents ``total_revenue`` when
@@ -121,7 +121,7 @@ def is_structurally_valid(spec: Spec | dict[str, Any]) -> bool:
     A spec is renderable when it has a mark or a composition operator, OR is a
     ``table_with_cells`` payload (frontend reads ``columns``), OR is a KPI
     payload (frontend reads ``kpi_metadata``). Kept byte-compatible with the
-    upstream predicate so the genieml adapter accepts and rejects the same
+    upstream predicate so an adapter for it accepts and rejects the same
     specs it does today.
     """
     raw = spec.raw if isinstance(spec, Spec) else spec

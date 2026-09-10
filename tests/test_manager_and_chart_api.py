@@ -1,4 +1,4 @@
-"""The manager, and the chart surface lexy consumes. All offline."""
+"""The manager, and the chart surface a dashboard host consumes. All offline."""
 from __future__ import annotations
 
 import json
@@ -223,7 +223,7 @@ def test_capabilities_names_every_type_the_package_can_produce():
 
 
 def test_a_full_vega_spec_is_refused_rather_than_returned_blank():
-    """react-vega takes Vega-Lite only. A spec it cannot draw renders nothing
+    """A Vega-Lite host takes Vega-Lite only. A spec it cannot draw renders nothing
     and reports nothing, which is the worst of both."""
     vega = Spec({"$schema": "https://vega.github.io/schema/vega/v5.json", "marks": []})
     with pytest.raises(ChartSurfaceError, match="cannot draw"):
@@ -400,7 +400,7 @@ async def test_types_outside_the_old_seven_round_trip(rows, question, expected):
 
 @pytest.mark.asyncio
 async def test_a_kpi_keeps_the_metadata_the_ui_branches_on():
-    """Lexy renders a KPI by reading chart_type for "kpi" and the kpi_metadata
+    """A host renders a KPI by reading chart_type for "kpi" and the kpi_metadata
     block. Losing either turns a KPI into a blank card."""
     from harness.offline import offline_runner
 

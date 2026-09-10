@@ -25,8 +25,8 @@ Three levels, and only the middle one exists:
 
 Worth stating, because it decides most of the design.
 
-**The grids already match.** Lexy renders with `react-grid-layout` at
-**12 columns**, `rowHeight={100}` (`DashboardsComponent1.jsx:2647`), each widget
+**The grids already match.** Dashboard hosts commonly render with
+`react-grid-layout` at **12 columns**, each widget
 carrying `{i, x, y, w, h}`. nexcraftviz's span vocabulary is a 12-column grid
 too — `full=12, three-quarters=9, two-thirds=8, half=6, third=4, quarter=3`. A
 span converts to a `w` by lookup, not by negotiation.
@@ -34,7 +34,7 @@ span converts to a `w` by lookup, not by negotiation.
 **Layout templates already exist as data.** `dashboard_templates` carries
 `source_id` ("command-center"), `name`, `description`, `category`,
 `complexity`, `domains`, `best_for` and the `layout` JSON itself
-(`workflowservices/app/models/workflowmodels.py:119`).
+(a host's template table).
 
 `best_for` and `domains` are the same idea as the corpus's `use_when` and
 `kinds` — routing metadata attached to a worked example. **The precedent
@@ -42,16 +42,16 @@ machinery built for chart types applies unchanged, one level up.** That is the
 central bet of this plan: not a new selection mechanism, the same one pointed at
 a different collection.
 
-**Dashboards are already in the vector store** on the box where Lexy runs, and
+**Dashboards can live in the vector store** a host already runs, and
 the corpus loader already has the two-tier model for exactly this —
 `chart_pairs_global` shared, `chart_pairs_<tenant>` as a per-tenant overlay
 (`nexcraftviz/corpus/seed.yaml`, header). Dashboard templates become
 `dashboard_templates_<tenant>` on the same store, reached through the retrieval
 config that already exists (`NEXCRAFTVIZ_RETRIEVAL`, `QDRANT_*`).
 
-**The tile handoff is written.** `builtin.DelivererAgent._tile` already shapes a
-chart for `thread_components` — lowercase `component_type`, `chart_schema`,
-`sample_data` wrapped as `{"values": rows}`.
+**The handoff is a package.** `builtin.DelivererAgent` returns the spec, its
+title, the plan and the verdict in one host-agnostic package; a host's bridge
+shapes that into the host's own storage rows.
 
 ## The design
 
@@ -63,7 +63,7 @@ layout, and a list of placed widgets.
 ```python
 class Placement(BaseModel):
     widget_id: str
-    x: int; y: int; w: int; h: int      # the 12-column grid, as lexy stores it
+    x: int; y: int; w: int; h: int      # the 12-column grid, as grid hosts store it
     title: str = ""
 
 class Dashboard(BaseModel):
@@ -168,7 +168,7 @@ POST /v1/dashboard/suggest    widgets → grouping suggestions
 
 | # | Scope | Exit criterion |
 |---|---|---|
-| D1 | `compose/dashboard.py`, grid round-trip | A `Dashboard` survives `to_grid_layout` → lexy's `onLayoutChange` → back with placements intact |
+| D1 | `compose/dashboard.py`, grid round-trip | A `Dashboard` survives `to_grid_layout` → a grid host's `onLayoutChange` → back with placements intact |
 | D2 | `recommend/template.py` + `dashboard_templates` loader | A template is chosen with a quoted reason; a template with more slots than widgets is not a candidate |
 | D3 | `templater` + `dashboarder` roles, `viz.template`, `viz.dashboard` | Widgets are placed into a template's slots; the dashboarder sees no rows |
 | D4 | Grouping suggestions | Three completion-rate charts are offered as one panel, with the reason, and nothing merges until accepted |
@@ -181,7 +181,7 @@ existing flow without needing a dashboard to exist.
 ## Open questions
 
 - **Where do templates load from?** `dashboard_templates` is a table in
-  workflowservices, not a file nexcraftviz ships. Either it reads the table
+  the host's backend, not a file nexcraftviz ships. Either it reads the table
   (a database dependency this package has carefully avoided), or the caller
   passes templates in, or they are mirrored into the vector store as the
   dashboards already are. The third keeps the package DB-free and is
@@ -191,7 +191,7 @@ existing flow without needing a dashboard to exist.
 - **Does a dashboard hold widgets or charts?** The plan says widgets, and a
   single chart becomes a one-tile widget. That is one concept fewer to reason
   about, at the cost of a wrapper around every solo chart. Worth confirming
-  against how `thread_components` rows are actually grouped today, because the
+  against how the host groups its stored components today, because the
   answer may already be settled there.
 
 - **Whose grid wins on conflict?** If the user drags a tile and then asks for a

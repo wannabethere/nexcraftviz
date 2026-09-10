@@ -38,9 +38,8 @@ PROMPT_DIR = Path(__file__).parent.parent / "prompts"
 InputT = TypeVar("InputT", bound=BaseModel)
 OutputT = TypeVar("OutputT", bound=BaseModel)
 
-#: What a model runner must look like. Deliberately the same shape the genieml
-#: stack already uses — ``(system, user, schema) -> (payload, metadata)`` — so
-#: an existing runner can be passed straight in.
+#: What a model runner must look like: ``(system, user, schema) -> (payload,
+#: metadata)`` — a plain shape, so an existing runner can be passed straight in.
 LLMRunner = Callable[[str, str, dict[str, Any]], Awaitable[tuple[dict[str, Any], dict[str, Any]]]]
 
 

@@ -167,8 +167,8 @@ def kpi_from_vega(spec: Spec | dict[str, Any]) -> KpiCard | None:
     Generated KPIs arrive as a bare ``text`` mark over a single row: valid,
     compiled, and drawn as a small number in the corner of an empty canvas.
     The playground draws a KPI as card furniture — label, value, unit, delta —
-    and so does lexy_ui, so this reads the value back out for any host that
-    wants the same. ``None`` when the spec draws anything more than that.
+    and so do dashboard hosts, so this reads the value back out for any host
+    that wants the same. ``None`` when the spec draws anything more than that.
     """
     spec = spec if isinstance(spec, Spec) else Spec(spec)
     if spec.family != "vega-lite":

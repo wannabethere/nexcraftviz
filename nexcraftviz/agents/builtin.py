@@ -266,8 +266,9 @@ class CriticAgent(SkillAgent):
 class DelivererAgent:
     """Package what was produced, with the verdict attached rather than hidden.
 
-    Minimal by design at this stage: it assembles the package and the dashboard
-    tile. Rendered files and BI exports are the other half of delivery and are
+    Minimal by design at this stage: it assembles the package — spec, title,
+    plan, verdict, provenance — and leaves a host's storage shapes to that
+    host's bridge. Rendered files and BI exports are the other half of delivery and are
     added where the export code lands — a deliverer that silently produced no
     exports would be worse than one that does not claim to.
     """
@@ -276,7 +277,7 @@ class DelivererAgent:
         role="deliverer",
         name="builtin.deliverer",
         uses_llm=False,
-        summary="Assemble the package: spec, plan, verdict, provenance, tile.",
+        summary="Assemble the package: spec, title, plan, verdict, provenance.",
     )
 
     async def run(self, ctx: StageContext) -> DeliveryArtifact:
@@ -286,10 +287,20 @@ class DelivererAgent:
         evaluation = getattr(ctx.stages, "evaluate", None)
 
         spec = generated.spec
+        from nexcraftviz.spec.labels import lift_title
+
+        _, title, subtitle = lift_title(spec.raw) if spec is not None else ({}, "", "")
+        if plan is not None:
+            title = title or plan.metadata.title
+            subtitle = subtitle or plan.metadata.subtitle
         package: dict[str, Any] = {
             "question": ctx.question,
             "spec": spec.raw if spec is not None else None,
             "chart_type": generated.chart_type or (plan.chart_type if plan else ""),
+            # Beside the spec as well as inside it: a host whose card header
+            # shows the title takes it from here.
+            "title": title,
+            "subtitle": subtitle,
             "plan": plan.model_dump(mode="json") if plan else None,
             "verdict": evaluation.model_dump(mode="json") if evaluation else None,
             "provenance": {
@@ -301,7 +312,6 @@ class DelivererAgent:
 
         artifact = DeliveryArtifact(
             package=package,
-            tile=_tile(spec, ctx.rows, plan) if spec is not None else None,
             telemetry=Telemetry(
                 wall_ms=int((time.perf_counter() - started) * 1000),
                 agent=self.spec.name,
@@ -313,31 +323,6 @@ class DelivererAgent:
         if evaluation is not None and not evaluation.passed:
             artifact.status = "ambiguous"
         return artifact
-
-
-def _tile(spec: Any, rows: list[dict[str, Any]], plan: Any) -> dict[str, Any]:
-    """Shape a delivered chart for the `thread_components` table.
-
-    Lowercase ``component_type`` and ``sample_data`` wrapped as
-    ``{"values": rows}`` because that is what the consumer reads; getting either
-    wrong produces a row that inserts cleanly and renders nothing.
-    """
-    from nexcraftviz.spec.labels import lift_title
-
-    # The tile header shows `configuration.title`; the chart must not draw it
-    # again. What the chart was titled wins over the plan: an edit may have
-    # changed it since.
-    schema, title, subtitle = lift_title(spec.raw)
-    return {
-        "component_type": "chart",
-        "chart_schema": schema,
-        "sample_data": {"values": rows or spec.data_values},
-        "configuration": {
-            "title": title or (plan.metadata.title if plan else "") or "",
-            "subtitle": subtitle or (plan.metadata.subtitle if plan else "") or "",
-            "chart_type": (plan.chart_type if plan else "") or spec.mark_summary,
-        },
-    }
 
 
 # ---------------------------------------------------------------------------

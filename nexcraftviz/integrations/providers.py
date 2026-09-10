@@ -2,14 +2,15 @@
 
 The core of this package never imports a provider SDK, and nothing here is
 required to use it — a host that already has a model passes its own runner, and
-the signature is deliberately the same one genieml uses,
+the signature is a plain one,
 ``(system, user, schema) -> (payload, meta)``, so an existing runner drops
 straight in.
 
 This module exists for the cases where nexcraftviz owns the model: the hosted
 API, the CLI, and the live evals.
 
-Configuration follows genieml's, so there is nothing new to set:
+Configuration uses the common OpenAI variable names, so there is often nothing
+new to set:
 
 ===================  ==========================================================
 ``OPENAI_API_KEY``   the key
@@ -25,11 +26,11 @@ from typing import Any
 
 from nexcraftviz.integrations.strict_schema import drop_nulls, to_strict_schema
 
-#: genieml's default, so both stacks answer the same way unless told otherwise.
+#: A capable, inexpensive default; set OPENAI_MODEL to change it.
 DEFAULT_OPENAI_MODEL = "gpt-5-mini"
 
 #: Model families that reject a custom ``temperature``. Sending one is a hard
-#: 400, not a warning — taken from genieml's own list rather than guessed.
+#: 400, not a warning — taken from the provider's documentation, not guessed.
 FIXED_TEMPERATURE_PREFIXES = ("o1", "o3", "o4", "gpt-5")
 
 

@@ -5,11 +5,11 @@ Two backends behind one call, chosen by environment:
 ``lexical``  token overlap weighted by how discriminative each word is across
              the corpus. No key, no network, no index to build — and no idea
              that "share of the total" and "composition" are the same thing.
-``qdrant``   embeddings in the vector store genieml already runs. Understands
+``qdrant``   embeddings in a Qdrant vector store. Understands
              the synonyms, and needs a key, a running Qdrant and an index.
 
-Configured the way genieml configures its own retrieval, so one environment
-serves both stacks::
+Configured with the common ``QDRANT_*`` variables, so one environment can
+serve several services::
 
     NEXCRAFTVIZ_RETRIEVAL   lexical | qdrant   (default: lexical)
     QDRANT_URL / QDRANT_HOST / QDRANT_PORT / QDRANT_API_KEY
@@ -62,7 +62,7 @@ class RetrievalConfig:
         return bool(self.qdrant_url or self.qdrant_host)
 
     def client_kwargs(self) -> dict[str, Any]:
-        """Matching genieml's QdrantSettings, so one environment serves both."""
+        """The usual QdrantSettings fields, so one environment serves several services."""
         kwargs: dict[str, Any] = {}
         if self.qdrant_url:
             kwargs["url"] = self.qdrant_url
@@ -87,8 +87,8 @@ def load_config() -> RetrievalConfig:
     """Read the environment. Never raises — an unusable config is a report."""
     backend = (os.getenv("NEXCRAFTVIZ_RETRIEVAL", "") or "").strip().lower()
     if not backend:
-        # Matches genieml's own switch, so a stack already using qdrant for
-        # retrieval turns this on without a second variable.
+        # The common RETRIEVAL_BACKEND switch, so a stack already using qdrant
+        # for retrieval turns this on without a second variable.
         backend = (os.getenv("RETRIEVAL_BACKEND", "") or "").strip().lower()
     config = RetrievalConfig(backend=backend or "lexical")
 

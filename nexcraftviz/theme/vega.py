@@ -18,7 +18,7 @@ def to_vega_config(theme: ThemeTokens) -> dict[str, Any]:
 
     A theme with ``vega_base="overrides"`` emits its overrides untouched. That
     is how the derived presets keep exact visual parity with the vega-themes
-    build lexy_ui ships today — layering our own defaults underneath would
+    build a host renders with — layering our own defaults underneath would
     change the rendering, which is precisely what deriving them avoids.
     """
     if theme.vega_base == "overrides":

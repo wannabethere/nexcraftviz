@@ -113,8 +113,8 @@ def _has_title(value: Any) -> bool:
 def lift_title(raw: dict[str, Any]) -> tuple[dict[str, Any], str, str]:
     """``raw`` without its top-level title, plus the title's text and subtitle.
 
-    For hosts whose card header already shows the title — lexy_ui's dashboard
-    tiles — where a title drawn inside the chart as well says it twice. Only
+    For hosts whose card header already shows the title — a dashboard tile,
+    say — where a title drawn inside the chart as well says it twice. Only
     the top level moves: a panel's own title inside a concat labels that panel.
     The input is not modified.
     """

@@ -44,7 +44,7 @@ SKILLS: list[tuple[str, str]] = [
     ("viz.place", "rearranges the tiles of an existing widget"),
 ]
 
-#: The 12-column grid nexcraftviz and Lexy share.
+#: The 12-column grid nexcraftviz widgets and dashboard hosts share.
 _SPAN = {"full": 12, "three-quarters": 9, "two-thirds": 8, "half": 6, "third": 4,
          "quarter": 3, "auto": 4}
 
@@ -432,7 +432,7 @@ def _chart(raw: dict | None, mount: str) -> str:
     if kpi is not None:
         return (render_card(title="", body=render_kpi(kpi), extra_class="kpi-tile")
                 + '<p class="caption">one number, drawn as a KPI card — as the playground '
-                "and Lexy draw it</p>")
+                "and dashboard hosts draw it</p>")
     return render_card(title="", body=render_chart_mount(spec, mount))
 
 

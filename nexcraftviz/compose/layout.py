@@ -1,8 +1,8 @@
 """Widget layouts.
 
-The four names are taken from ``genieml_skills/skills/writers/dashboard.py``'s
-``LayoutKindLiteral`` rather than invented, so a widget composed here can be
-handed to the existing dashboard writer without a translation step.
+The four names are a common dashboard-writer vocabulary rather than invented
+ones, so a widget composed here can be handed to a dashboard writer that
+already speaks it without a translation step.
 
 Layout does two things: it orders the tiles, and it assigns each one a span.
 Both are deterministic — there is no judgement in "KPIs go in a row across the

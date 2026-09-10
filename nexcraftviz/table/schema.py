@@ -139,7 +139,7 @@ class TableSpec(BaseModel):
 KpiSubtype = Literal[
     # the corpus vocabulary
     "counter", "percentage", "score",
-    # the vocabulary chart.kpi.v1 emits and lexy_ui special-cases
+    # the vocabulary chart.kpi.v1 emits and some hosts special-case
     "target_vs_actual", "percent_change", "comparison_kpi",
 ]
 
@@ -149,8 +149,8 @@ class KpiCard(BaseModel):
 
     Two vocabularies exist in the wild and both are accepted: the corpus uses
     ``counter`` / ``percentage`` / ``score``, while ``chart.kpi.v1`` emits
-    ``target_vs_actual`` / ``percent_change``, which is what ``lexy_ui``'s
-    ``InlineKpiTile`` branches on. Normalising to one would silently change what
+    ``target_vs_actual`` / ``percent_change``, which hosts' KPI tiles branch
+    on. Normalising to one would silently change what
     the frontend renders, so the union is deliberate.
     """
 

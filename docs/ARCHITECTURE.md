@@ -134,7 +134,7 @@ ThemeTokens (YAML)
 
 `powerbi` and `carbon-g90` are **derived, not hand-reproduced**:
 `_generate_presets.py` reads the configs vl-convert bundles — the same
-`vega-themes` builds `lexy_ui` hands to `react-vega` today — keeps them verbatim
+`vega-themes` builds many hosts hand straight to their renderer — keeps them verbatim
 under `vega_base: "overrides"`, and extracts tokens for the CSS side. A test
 asserts the resulting PNG is byte-identical to `to_png(spec, theme="powerbi")`,
 so adopting these is not a visual regression.

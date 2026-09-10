@@ -161,7 +161,7 @@ async def test_temperature_is_sent_for_models_that_accept_it() -> None:
     assert client.calls[0]["temperature"] == 0.2
 
 
-def test_the_fixed_temperature_list_matches_genieml() -> None:
+def test_the_fixed_temperature_list_matches_the_provider() -> None:
     assert "gpt-5" in FIXED_TEMPERATURE_PREFIXES
     assert DEFAULT_OPENAI_MODEL == "gpt-5-mini"
 
@@ -239,7 +239,7 @@ def test_default_runner_returns_none_without_a_key(monkeypatch) -> None:
     assert default_runner() is None
 
 
-def test_the_model_comes_from_the_same_env_var_as_genieml(monkeypatch) -> None:
+def test_the_model_comes_from_the_common_env_var(monkeypatch) -> None:
     monkeypatch.setenv("OPENAI_MODEL", "gpt-4o-mini")
     client = FakeClient()
     openai_runner(client=client)

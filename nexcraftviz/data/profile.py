@@ -3,9 +3,8 @@
 Two jobs:
 
 1. Give the chart LLM a compact, accurate description of the data so it does not
-   have to re-infer column types from raw rows. (This is the role
-   ``genieml_skills/skills/chart/utils/preprocess.py:analyze`` plays today; this
-   module supersedes it with cardinality, null rates, ordering and role
+   have to re-infer column types from raw rows. (Types alone are not
+   enough; the profile adds cardinality, null rates, ordering and role
    detection.)
 2. Give :mod:`nexcraftviz.spec.validate` the column set and types it needs for
    tier-2 data-binding validation — the check that catches the dominant LLM

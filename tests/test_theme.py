@@ -159,9 +159,9 @@ def test_strip_hardcoded_colours_is_a_no_op_when_there_is_nothing_to_strip() -> 
 def test_derived_preset_renders_identically_to_the_vega_theme(
     bar_spec: Spec, name: str, source: str
 ) -> None:
-    """Byte-for-byte parity with what lexy_ui renders today.
+    """Byte-for-byte parity with vega-themes, as a host renders it.
 
-    lexy_ui hands vega-themes' config straight to react-vega. Applying our
+    A host hands vega-themes' config straight to its renderer. Applying our
     derived preset must produce the same pixels, or switching is a visual
     regression rather than an upgrade.
     """
@@ -298,7 +298,7 @@ def test_unparseable_colours_are_reported_not_failed() -> None:
 
 #: Contrast failures in the derived presets. These are defects in the upstream
 #: vega-themes palettes, not ours, and we keep them deliberately: the whole
-#: value of deriving `powerbi` is that it renders identically to what lexy_ui
+#: value of deriving `powerbi` is that it renders identically to what a host
 #: ships today. Recording them here makes the deviation visible and stops it
 #: growing silently. A brand theme built on our own tokens has no such excuse.
 KNOWN_THEME_CONTRAST_DEVIATIONS: dict[str, set[str]] = {

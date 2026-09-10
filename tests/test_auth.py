@@ -56,11 +56,11 @@ def test_the_key_header_is_accepted():
 
 
 def test_the_key_header_works_when_authorization_carries_someone_elses_token():
-    """Lexy sends its own session JWT in `Authorization`. One header cannot
+    """A host proxying a browser sends its own session JWT in `Authorization`. One header cannot
     carry two tokens, so a matching key header must be enough on its own."""
     response = _client().get(
         "/v1/chart/capabilities",
-        headers={"Authorization": "Bearer lexy-session-jwt", KEY_HEADER: TOKEN},
+        headers={"Authorization": "Bearer host-session-jwt", KEY_HEADER: TOKEN},
     )
     assert response.status_code == 200
 

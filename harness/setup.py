@@ -16,7 +16,7 @@ from pathlib import Path
 ENV_TEMPLATE = """\
 # nexcraftviz — provider configuration.
 #
-# Matches genieml's names, so one key configures both stacks. The tiers exist so
+# The common OpenAI variable names, so one key configures several stacks. The tiers exist so
 # planning and critique can use a stronger model than generation without a code
 # change; leave them unset and everything uses OPENAI_MODEL.
 

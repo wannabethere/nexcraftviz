@@ -1,7 +1,7 @@
-"""Optional ``.env`` loading, matching genieml's convention.
+"""Optional ``.env`` loading.
 
-genieml loads a ``.env`` in both ``genieml_skills/env.py`` and ``cp2/env.py``,
-so a key set there should work here too rather than being a second thing to
+A ``.env`` in the working directory or any parent is read, so a key set once
+for a whole project tree works here too rather than being a second thing to
 remember.
 
 Two deliberate choices:
@@ -22,8 +22,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-#: Searched in order, nearest first. The genieml root is included because that
-#: is where the existing `.env.example` lives — one key, both stacks.
+#: Searched in order, nearest first, from the working directory upward.
 CANDIDATE_NAMES = (".env.local", ".env")
 
 

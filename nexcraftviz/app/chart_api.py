@@ -9,11 +9,11 @@ Everything here is a pure function over rows plus an optional model runner; the
 HTTP layer in :mod:`nexcraftviz.app.api` only unwraps the request and returns
 the envelope.
 
-**The surface declares what it can render.** The consumer draws with
-``react-vega``'s ``<VegaLite>``, which takes Vega-Lite and nothing else, so a
-full-Vega spec is refused here rather than handed over to render as a blank
-rectangle. :func:`capabilities` says so out loud so a caller never has to
-hardcode the list.
+**The surface declares what it can render.** It hands back Vega-Lite, KPI and
+table payloads — what a Vega-Lite host can draw — and refuses a full-Vega spec
+rather than hand over one that would render as a blank rectangle.
+:func:`capabilities` says so out loud so a caller never has to hardcode the
+list.
 """
 from __future__ import annotations
 
@@ -51,7 +51,7 @@ def envelope(
     declined: list[str] | None = None,
     degraded: list[str] | None = None,
     widget: Any = None,
-    lift_title: bool = False,
+    title_placement: str = "chart",
 ) -> dict[str, Any]:
     """One response shape for both calls.
 
@@ -72,10 +72,12 @@ def envelope(
                 f"{family!r}, which the consumer cannot draw"
             )
         schema = spec.raw
-        if lift_title:
-            # lexy_ui's card header shows the title; drawn inside the chart as
-            # well, it appeared twice. It travels beside the chart instead.
-            schema, title, subtitle = _lift_title(schema)
+        # The title always travels beside the chart. A host whose card header
+        # shows it asks for "header", and it is taken out of the chart as well —
+        # drawn in both places, it is said twice.
+        lifted, title, subtitle = _lift_title(schema)
+        if title_placement == "header":
+            schema = lifted
         chart_type = chart_type or chart_type_of(spec)
 
     return {
@@ -178,6 +180,7 @@ async def create_chart(
     language: str = "English",
     llm: Any = None,
     registry: Any = None,
+    title_placement: str = "chart",
 ) -> dict[str, Any]:
     """Question + rows → a chart, through the full pipeline.
 
@@ -209,7 +212,7 @@ async def create_chart(
         plan=plan,
         verdict=run.stages.evaluate,
         actions=["create"],
-        lift_title=True,
+        title_placement=title_placement,
     )
     if not result["title"] and plan is not None:
         result["title"] = plan.metadata.title
@@ -234,6 +237,7 @@ async def annotate_chart(
     llm: Any = None,
     registry: Any = None,
     session: Any = None,
+    title_placement: str = "chart",
 ) -> tuple[dict[str, Any], Any]:
     """An instruction against an existing chart. Returns ``(envelope, session)``.
 
@@ -278,7 +282,7 @@ async def annotate_chart(
         declined=run.decision.declined,
         degraded=run.failures(),
         widget=widget,
-        lift_title=True,
+        title_placement=title_placement,
         verdict=getattr(session.last_run, "stages", None)
         and session.last_run.stages.evaluate,
     ), session

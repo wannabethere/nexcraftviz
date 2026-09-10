@@ -115,7 +115,7 @@ NEXCRAFTVIZ_EMBED_MODEL → OPENAI_EMBED_MODEL → text-embedding-3-small
 `lexical` weights token overlap by how discriminative each word is across the
 corpus — needs no key, no network and no index, and does not know that "share
 of the total" and "composition" are the same thing. `qdrant` uses embeddings in
-the vector store genieml already runs, and is configured through the same
+a Qdrant vector store, and is configured through the same
 variables so one environment serves both stacks:
 
 ```bash
@@ -189,7 +189,7 @@ Eight roles: planner, generator, evaluator, critic, deliverer, editor, placer,
 narrator. The built-ins wrap the skills rather than reimplementing them, so a
 user hits the same code whichever door they came through.
 
-Model tiers resolve through the same chain genieml uses, so one environment
+Model tiers resolve through a common chain of variables, so one environment
 configures both stacks:
 
 ```
@@ -240,7 +240,7 @@ X-Nexcraftviz-Key: <token>
 ```
 
 The second header exists because a browser caller's `Authorization` is usually
-already spoken for — Lexy sends its own session JWT there, and one header cannot
+already spoken for — a host proxying its own session JWT sends it there, and one header cannot
 carry two tokens. CORS preflight never needs the token, and a refusal still
 carries CORS headers, so a browser reports the real 401 rather than an opaque
 CORS failure. `serve` prints whether auth is on, and warns when it is listening
@@ -460,9 +460,9 @@ nexcraftviz serve      # API + embed on :8180
 
 The core imports no provider SDK and reads no API key — there is a test
 asserting that. A host passes its own runner, and the signature deliberately
-matches genieml's: `(system, user, schema) -> (payload, meta)`.
+is a plain one: `(system, user, schema) -> (payload, meta)`.
 
-When nexcraftviz owns the model, configuration is genieml's, so there is
+When nexcraftviz owns the model, configuration uses the common OpenAI names, so there is
 nothing new to set:
 
 | | |
@@ -492,7 +492,7 @@ nexcraftviz serve                    # picks up a key if one is set, says so if 
 ```
 
 `.env` files are gitignored; `.env.example` is committed. Variable names match
-genieml's, so one file serves both stacks. Nothing here is required — without a
+the common ones, so one file can serve several services. Nothing here is required — without a
 key, `propose`/`commit` and every deterministic skill still work.
 
 Two provider details worth knowing, both pinned by tests. `gpt-5*` and the

@@ -187,8 +187,8 @@ def main(argv: list[str] | None = None) -> int:
 
     args = parser.parse_args(argv)
     if not args.no_dotenv:
-        # Matches genieml, which loads a .env in genieml_skills/env.py and
-        # cp2/env.py. Never overrides what is already exported.
+        # A .env in this directory or a parent. Never overrides what is
+        # already exported.
         env.load()
     try:
         return _dispatch(args)

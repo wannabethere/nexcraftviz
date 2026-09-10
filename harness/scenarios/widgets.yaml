@@ -1,6 +1,6 @@
-# The widget shapes the Lexy dashboard actually renders.
+# The widget shapes a dashboard host renders.
 #
-# Lexy draws with react-vega's <VegaLite>, and its widgets come in four shapes:
+# A Vega-Lite host draws them, and dashboard widgets come in four shapes:
 # a single number, a ranked comparison, a trend, and a rich table. Each of these
 # is one of those, with the question composed the way the UI composes it — from
 # the widget title and the column names, never typed by a user.
@@ -16,9 +16,9 @@ scenarios:
       Total open findings. Show the most useful view of this result set
       (open_findings).
     note: >
-      One row, one measure — a KPI, not a bar chart with a single bar. Lexy has
-      dedicated KPI rendering keyed on chart_type containing "kpi", which is
-      exactly what the endpoint being replaced could not return.
+      One row, one measure — a KPI, not a bar chart with a single bar. Hosts
+      commonly draw a KPI from its own payload rather than as a Vega
+      chart, so the chart type has to say kpi.
     rows:
       - {open_findings: 47}
     expect_chart_type: [kpi]

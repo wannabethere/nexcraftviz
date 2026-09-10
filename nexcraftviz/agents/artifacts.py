@@ -306,9 +306,6 @@ class DeliveryArtifact(BaseModel):
         default_factory=dict, description="format → path or data URI."
     )
     exports: dict[str, ExportResult] = Field(default_factory=dict)
-    tile: dict[str, Any] | None = Field(
-        default=None, description="Ready for the thread_components table."
-    )
     telemetry: Telemetry = Field(default_factory=Telemetry)
 
 

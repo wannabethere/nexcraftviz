@@ -16,7 +16,7 @@ wrong for a deployment; :class:`SessionStore` is the seam to replace.
 from __future__ import annotations
 
 import os
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -101,6 +101,11 @@ class CreateChart(BaseModel):
     rows: list[dict[str, Any]] = Field(default_factory=list)
     theme: str = ""
     language: str = "English"
+    title_placement: Literal["chart", "header"] = Field(
+        default="chart",
+        description="Where the title goes: drawn in the chart, or returned beside it "
+                    "only — for a host whose card header already shows it.",
+    )
 
 
 class AnnotateChart(BaseModel):
@@ -113,6 +118,11 @@ class AnnotateChart(BaseModel):
     language: str = "English"
     session_id: str = Field(
         default="", description="Optional — supply one to keep undo across calls."
+    )
+    title_placement: Literal["chart", "header"] = Field(
+        default="chart",
+        description="Where the title goes: drawn in the chart, or returned beside it "
+                    "only — for a host whose card header already shows it.",
     )
 
 
@@ -127,8 +137,9 @@ _NO_MODEL = (
 #: credentials, and "is it up?" leaks nothing worth protecting.
 _OPEN_PATHS = frozenset({"/v1/health"})
 
-#: The header a browser caller can use when `Authorization` is already taken —
-#: Lexy sends its own session JWT there, and one header cannot carry two tokens.
+#: The header a caller can use when `Authorization` is already taken — a host
+#: proxying its own session token sends it there, and one header cannot carry
+#: two tokens.
 KEY_HEADER = "x-nexcraftviz-key"
 
 
@@ -377,6 +388,7 @@ def create_app(
             return await create_chart(
                 question=body.question, rows=body.rows, theme=body.theme,
                 language=body.language, llm=llm,
+                title_placement=body.title_placement,
             )
         except ChartSurfaceError as exc:
             raise HTTPException(422, str(exc)) from exc
@@ -398,6 +410,7 @@ def create_app(
                 language=body.language,
                 llm=llm,
                 session=session,
+                title_placement=body.title_placement,
             )
         except ChartSurfaceError as exc:
             raise HTTPException(422, str(exc)) from exc
