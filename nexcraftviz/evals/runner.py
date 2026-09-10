@@ -15,7 +15,9 @@ regresses the other is worth seeing rather than averaging away.
 from __future__ import annotations
 
 import json
+import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from nexcraftviz.evals.cases import Case, cases_for
@@ -48,6 +50,29 @@ class CaseResult:
     #: plan's rationale — so a report can show what was said, not only what
     #: it produced.
     answer: dict[str, Any] | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        """Everything a report shows — the question, the answer, the artifact."""
+        meta = self.meta or {}
+        return {
+            "id": self.case.id,
+            "skill": self.case.skill,
+            "checks": self.case.checks,
+            "instruction": self.case.instruction,
+            "inputs": self.case.inputs,
+            "ok": self.ok,
+            "decided_right": self.decided_right,
+            "result_works": self.result_works,
+            "error": self.error,
+            "notes": self.notes,
+            "missing": self.missing,
+            "forbidden": self.forbidden,
+            "emitted": self.emitted,
+            "binding": self.binding,
+            "artifact": self.artifact,
+            "answer": self.answer,
+            "tokens": {k: meta[k] for k in ("tokens_in", "tokens_out") if k in meta},
+        }
 
     def line(self) -> str:
         mark = "PASS" if self.ok else "FAIL"
@@ -119,6 +144,26 @@ class Report:
             lines.append(f"NOT STRICT: {', '.join(self.non_strict())} — fix the schema; "
                          f"see tests/test_strict_schemas.py")
         return "\n".join(lines)
+
+
+def save_report(report: Report, directory: Path) -> Path:
+    """Write a timestamped `eval-*.json` — what `harness report --html` reads.
+
+    Printing alone was not enough: a live pass costs five minutes and real
+    tokens, and a result that only reached the terminal had to be run again to
+    be shown to anyone.
+    """
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / f"eval-{time.strftime('%Y%m%dT%H%M%S')}.json"
+    path.write_text(
+        json.dumps({
+            "at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            "model": report.model,
+            "results": [r.to_dict() for r in report.results],
+        }, indent=2, default=str),
+        encoding="utf-8",
+    )
+    return path
 
 
 async def run_case(case: Case, llm: LLMRunner) -> CaseResult:
@@ -371,6 +416,7 @@ def main(argv: list[str] | None = None) -> int:  # pragma: no cover - entry poin
     parser.add_argument("--skill", default="", help="Only this skill.")
     parser.add_argument("--model", default="", help="Override OPENAI_MODEL.")
     parser.add_argument("--json", action="store_true", help="Emit JSON.")
+    parser.add_argument("--save", default="", help="Also write eval-*.json into this directory.")
     args = parser.parse_args(argv)
 
     from nexcraftviz.integrations.providers import ProviderError, openai_runner
@@ -382,6 +428,8 @@ def main(argv: list[str] | None = None) -> int:  # pragma: no cover - entry poin
         return 3
 
     report = asyncio.run(run(llm, skill=args.skill, model=args.model))
+    if args.save:
+        print(f"saved to {save_report(report, Path(args.save))}", file=sys.stderr)
     if args.json:
         print(json.dumps({
             "model": report.model,

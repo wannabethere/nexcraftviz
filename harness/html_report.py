@@ -5,10 +5,12 @@ latest eval run and harness run together — what needs a look first, then each
 harness scenario end to end (question, plan, chart, gates, verdict), then every
 eval case grouped by the skill it exercises.
 
-Charts sit on a light plate in both themes. They are rendered with the
-nexcraftviz light theme, the way a host shows them, so their ink is dark; a
-plate that stayed light is honest about that. The page's own palette is
-nexcraftviz's theme tokens, carried into the viewer's light/dark handling.
+Charts are drawn the way the playground draws them: the theme's stylesheet,
+vega-embed in the browser, and the playground's own Vega config read from the
+theme's CSS variables — so a tester sees here what the embed and the playground
+show. A single number is a KPI card, not a text mark on an empty canvas, and a
+widget is the widget, cards and all. The page follows the viewer's light or
+dark setting, and the charts follow the page.
 """
 from __future__ import annotations
 
@@ -16,9 +18,16 @@ import copy
 import html
 import json
 from pathlib import Path
-from typing import Any
 
 from harness.run import RESULTS_DIR
+from nexcraftviz.render.html import (
+    kpi_from_vega,
+    render_card,
+    render_chart_mount,
+    render_kpi,
+    render_table,
+)
+from nexcraftviz.spec.model import Spec
 
 _e = html.escape
 
@@ -38,8 +47,6 @@ SKILLS: list[tuple[str, str]] = [
 #: The 12-column grid nexcraftviz and Lexy share.
 _SPAN = {"full": 12, "three-quarters": 9, "two-thirds": 8, "half": 6, "third": 4,
          "quarter": 3, "auto": 4}
-
-_CHART_WIDTH = 440
 
 
 def latest(prefix: str, directory: Path = RESULTS_DIR) -> Path | None:
@@ -70,7 +77,10 @@ def build_report(
         _evals(eval_rows),
         _footer(eval_path, run_path),
     ])
-    content = f"<title>nexcraftviz Live Run</title>{_FONTS}<style>{_CSS}</style><main>{body}</main>"
+    content = (
+        f"<title>nexcraftviz Live Run</title><style>{_theme_css()}</style>"
+        f"<style>{_CSS}</style><main>{body}</main>{_scripts()}"
+    )
     if not standalone:
         return content
     return (
@@ -170,6 +180,7 @@ def _scenarios(rows: list[dict]) -> str:
 def _scenario(r: dict) -> str:
     plan = r.get("plan") or {}
     critique = r.get("critique")
+    mount = f"s-{r.get('scenario', '')}"
     gates = "".join(
         f'<span class="gate {"ok" if g.get("passed") else "no"}" '
         f'title="{_e(g.get("detail") or "")}">'
@@ -199,7 +210,7 @@ def _scenario(r: dict) -> str:
         + (f'<ul class="problems">{problems}</ul>' if problems else "")
         + (f"<details><summary>pipeline trace</summary><ol class=\"trace\">{trace}</ol></details>"
            if trace else "")
-        + f'</div><div class="scenario-chart">{_chart(r.get("spec"))}</div></article>'
+        + f'</div><div class="scenario-chart">{_chart(r.get("spec"), mount)}</div></article>'
     )
 
 
@@ -215,6 +226,9 @@ def _plan_line(plan: dict) -> str:
         + (f' <i>{_e(e["aggregate"])}</i>' if e.get("aggregate") and e.get("field") else "")
         + "</span>"
         for e in plan.get("encodings") or []
+        # A channel the planner listed and left empty is not an encoding; as a
+        # chip it reads as a dangling "color" with nothing after it.
+        if e.get("field") or e.get("aggregate")
     )
     rationale = plan.get("rationale") or ""
     return (f'<p class="plan"><span class="k">plan</span> <b>{_e(plan.get("chart_type", ""))}</b> '
@@ -271,6 +285,7 @@ def _answer(r: dict) -> str:
     answer = r.get("answer") or {}
     emitted = r.get("emitted") or []
     artifact = r.get("artifact")
+    mount = f"e-{r.get('id', '')}"
 
     if skill == "viz.plan":
         plan = emitted[0] if emitted else answer
@@ -284,12 +299,12 @@ def _answer(r: dict) -> str:
     if skill == "viz.narrate":
         return _narration(answer)
     if skill == "viz.place":
-        return _ops(emitted) + _widget(artifact)
+        return _ops(emitted) + _widget(artifact, mount)
     if skill == "viz.generate":
         reasoning = answer.get("reasoning") or ""
         return ((f'<p class="rationale">{_e(reasoning)}</p>' if reasoning else "")
-                + _chart(artifact))
-    return _ops(emitted) + _chart(artifact)
+                + _chart(artifact, mount))
+    return _ops(emitted) + _chart(artifact, mount)
 
 
 def _ops(ops: list[dict]) -> str:
@@ -357,9 +372,20 @@ def _design(design: dict) -> str:
                  for t in tiles]))
 
 
-def _widget(widget: dict | None) -> str:
+def _widget(widget: dict | None, mount: str) -> str:
+    """The widget itself, as the playground renders it — cards, KPIs, charts.
+
+    Falls back to the span diagram when the document will not rebuild, so a
+    malformed widget is still shown for what its tiles were meant to be.
+    """
     if not widget:
         return ""
+    try:
+        from nexcraftviz.compose.widget import Widget
+
+        return Widget.from_dict(widget).to_html(id_prefix=f"{mount}-")
+    except Exception:  # noqa: BLE001, S110 — one widget must not sink the page
+        pass
     tiles: list[tuple[str, str, str]] = []
     for node in widget.get("nodes") or []:
         members = node.get("tiles") if isinstance(node.get("tiles"), list) else None
@@ -389,40 +415,25 @@ def _grid(tiles: list[tuple[str, str, str]]) -> str:
 # charts
 # ---------------------------------------------------------------------------
 
-def _chart(raw: dict | None) -> str:
-    """A Vega-Lite spec, drawn as inline SVG on a light plate."""
+def _chart(raw: dict | None, mount: str) -> str:
+    """A payload drawn as its host draws it: a KPI card, a table, or a chart."""
     if not raw:
         return ""
-    from nexcraftviz.spec.model import Spec
-
     spec = Spec(copy.deepcopy(raw))
-    if spec.family != "vega-lite":
-        return (f'<p class="quiet">a {_e(spec.family)} payload — drawn by the host '
-                "component, not by Vega</p>")
-    try:
-        from nexcraftviz.render import available, to_svg
-        from nexcraftviz.theme import apply_theme, load
-
-        if not available():
-            return '<p class="quiet">install the render extra to draw charts here</p>'
-        themed = apply_theme(spec, load("nexcraftviz-light")).spec
-        _fix_widths(themed.raw)
-        svg = to_svg(themed)
-    except Exception as exc:  # noqa: BLE001 — one chart must not sink the page
-        return f'<p class="quiet">could not draw this chart: {_e(str(exc))}</p>'
-    return f'<figure class="plate">{svg}</figure>'
-
-
-def _fix_widths(node: Any) -> None:
-    """`width: "container"` means "fill the card" — offline there is no card."""
-    if isinstance(node, dict):
-        if node.get("width") == "container":
-            node["width"] = _CHART_WIDTH
-        for value in node.values():
-            _fix_widths(value)
-    elif isinstance(node, list):
-        for item in node:
-            _fix_widths(item)
+    family = spec.family
+    if family == "kpi":
+        return render_card(title="", body=render_kpi(spec), extra_class="kpi-tile")
+    if family == "table":
+        return render_card(title="", body=render_table(spec))
+    if family != "vega-lite":
+        return (f'<p class="quiet">a {_e(family)} payload — this page draws Vega-Lite, '
+                "tables and KPIs</p>")
+    kpi = kpi_from_vega(spec)
+    if kpi is not None:
+        return (render_card(title="", body=render_kpi(kpi), extra_class="kpi-tile")
+                + '<p class="caption">one number, drawn as a KPI card — as the playground '
+                "and Lexy draw it</p>")
+    return render_card(title="", body=render_chart_mount(spec, mount))
 
 
 def _footer(eval_path: Path | None, run_path: Path | None) -> str:
@@ -432,47 +443,80 @@ def _footer(eval_path: Path | None, run_path: Path | None) -> str:
 
 
 # ---------------------------------------------------------------------------
-# style — nexcraftviz's theme tokens, in the viewer's three theme states
+# the playground's stylesheet and scripts
 # ---------------------------------------------------------------------------
 
-_FONTS = (
-    '<link rel="preconnect" href="https://fonts.googleapis.com">'
-    '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?'
-    'family=IBM+Plex+Sans+Condensed:wght@500;600&display=swap">'
+#: The Vega libraries the playground loads, pinned: a page someone was sent
+#: must not change under them because a CDN tag moved.
+_VEGA = (
+    "https://cdn.jsdelivr.net/npm/vega@5.30.0",
+    "https://cdn.jsdelivr.net/npm/vega-lite@5.21.0",
+    "https://cdn.jsdelivr.net/npm/vega-embed@6.26.0",
 )
 
-_LIGHT = """
-  --ground: #F6F8FA; --surface: #FFFFFF; --sunk: #EEF2F6;
-  --ink: #0F172A; --ink-2: #475569; --muted: #667085;
-  --accent: #0C8BA6; --rule: #E2E8F0; --rule-strong: #CBD5E1;
-  --good: #15803D; --bad: #B91C1C; --warn: #B45309;
-  --plate: #FFFFFF; --plate-rule: #E2E8F0;
-  color-scheme: light;
-"""
-_DARK = """
-  --ground: #111827; --surface: #161E2E; --sunk: #1F2937;
-  --ink: #F1F5F9; --ink-2: #CBD5E1; --muted: #94A3B8;
-  --accent: #3EC5E0; --rule: #334155; --rule-strong: #475569;
-  --good: #4ADE80; --bad: #F87171; --warn: #FBBF24;
-  --plate: #F6F8FA; --plate-rule: #475569;
-  color-scheme: dark;
+#: The playground sets `data-nxv-theme` from its own buttons. Here the viewer's
+#: setting decides — an explicit `data-theme` stamp, else the OS — and charts
+#: re-mount so their Vega config is read from the new variables.
+_THEME_SYNC = """
+(function () {
+  var root = document.documentElement;
+  var dark = window.matchMedia ? matchMedia('(prefers-color-scheme: dark)') : null;
+  function wanted() {
+    var stamped = root.getAttribute('data-theme');
+    if (stamped === 'dark' || stamped === 'light') return stamped;
+    return dark && dark.matches ? 'dark' : 'light';
+  }
+  function sync() {
+    var mode = wanted();
+    if (root.getAttribute('data-nxv-theme') === mode) return;
+    root.setAttribute('data-nxv-theme', mode);
+    if (typeof mountCharts === 'function') mountCharts();
+  }
+  sync();
+  new MutationObserver(sync).observe(root, {attributes: true, attributeFilter: ['data-theme']});
+  if (dark && dark.addEventListener) dark.addEventListener('change', sync);
+})();
 """
 
+
+def _theme_css() -> str:
+    from nexcraftviz.theme import load
+    from nexcraftviz.theme.css import to_bundle
+
+    return to_bundle(load("nexcraftviz-light"), load("nexcraftviz-dark"))
+
+
+def _scripts() -> str:
+    from nexcraftviz.gallery import _playground_js
+
+    tags = "".join(f'<script src="{src}"></script>' for src in _VEGA)
+    return f"{tags}<script>{_playground_js()}</script><script>{_THEME_SYNC}</script>"
+
+
+# ---------------------------------------------------------------------------
+# style — the page's names for the theme's variables
+# ---------------------------------------------------------------------------
+
+#: The page's own names for the theme's `--nxv-*` variables, so every colour on
+#: it is the playground's and one theme switch restyles page and charts alike.
 _CSS = (
-    ":root {" + _LIGHT + "}"
-    '@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {' + _DARK + "} }"
-    ':root[data-theme="dark"] {' + _DARK + "}"
-    + """
+    """
+:root { --ground: var(--nxv-background); --surface: var(--nxv-surface);
+  --sunk: var(--nxv-surface-alt); --ink: var(--nxv-text); --ink-2: var(--nxv-text-secondary);
+  --muted: var(--nxv-text-muted); --accent: var(--nxv-accent); --rule: var(--nxv-border);
+  --rule-strong: var(--nxv-border-strong); --good: var(--nxv-positive);
+  --bad: var(--nxv-negative); --warn: var(--nxv-warning); color-scheme: light; }
+:root[data-nxv-theme="dark"] { color-scheme: dark; }
 body { background: var(--ground); color: var(--ink); margin: 0;
-  font: 15px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+  font: 15px/1.55 var(--nxv-font); }
 main { max-width: 1180px; margin: 0 auto; padding: 32px 28px 48px; display: grid; gap: 40px; }
 h1, h2, h3 { text-wrap: balance; margin: 0; }
-h1, h2, .tally-n { font-family: "IBM Plex Sans Condensed", system-ui, sans-serif; }
+h1, h2, .tally-n { font-family: var(--nxv-font); }
 h1 { font-size: 34px; line-height: 1.1; font-weight: 600; letter-spacing: -0.01em; }
 h2 { font-size: 24px; font-weight: 600; }
 h3 { font-size: 17px; font-weight: 600; line-height: 1.35; }
 code, .case-id, .chip, .gate, .meta, .ops, .cell-s, .trace {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  font-family: var(--nxv-font-mono); }
 .eyebrow { margin: 0 0 6px; color: var(--accent); font-size: 12px; font-weight: 600;
   letter-spacing: 0.08em; text-transform: uppercase; }
 .meta { margin: 8px 0 0; color: var(--muted); font-size: 13px; }
@@ -492,11 +536,11 @@ code, .case-id, .chip, .gate, .meta, .ops, .cell-s, .trace {
 .attention { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--rule); }
 .attention li { display: grid; grid-template-columns: 88px minmax(160px, 260px) minmax(0, 1fr);
   gap: 14px; align-items: baseline; padding: 10px 0; border-bottom: 1px solid var(--rule); }
-.where { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
+.where { font-family: var(--nxv-font-mono); font-size: 13px; }
 .why { color: var(--ink-2); font-size: 14px; }
 .pill { display: inline-block; font-size: 10.5px; font-weight: 700; letter-spacing: 0.07em;
   text-transform: uppercase; padding: 2px 8px; border-radius: 999px; margin-left: 8px;
-  vertical-align: 1px; font-family: system-ui, sans-serif; }
+  vertical-align: 1px; font-family: var(--nxv-font); }
 .attention .pill { margin-left: 0; justify-self: start; }
 .pill.pass { color: var(--good); background: color-mix(in srgb, var(--good) 13%, transparent); }
 .pill.fail { color: var(--bad); background: color-mix(in srgb, var(--bad) 13%, transparent); }
@@ -524,9 +568,10 @@ code, .case-id, .chip, .gate, .meta, .ops, .cell-s, .trace {
 details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
 details summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .trace { margin: 8px 0 0; padding-left: 20px; font-size: 12px; color: var(--ink-2); }
-.plate { margin: 0; background: var(--plate); border: 1px solid var(--plate-rule);
-  border-radius: 8px; padding: 12px; overflow-x: auto; }
-.plate svg { display: block; max-width: 100%; height: auto; }
+.scenario-chart, .case-answer { min-width: 0; }
+.scenario-chart .nxv-card, .case-answer .nxv-card { margin: 0; overflow-x: auto; }
+.caption { margin: 6px 0 0; color: var(--muted); font-size: 12.5px; }
+.nxv-card.kpi-tile { max-width: 380px; }
 .skill { display: grid; gap: 0; border-top: 2px solid var(--ink); }
 .skill-head { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 14px;
   align-items: baseline; padding: 12px 0; }

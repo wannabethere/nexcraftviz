@@ -96,19 +96,32 @@ def test_model_text_is_escaped(page):
 
 
 def test_both_themes_are_defined(page):
-    assert '@media (prefers-color-scheme: dark)' in page
-    assert ':root[data-theme="dark"]' in page
+    """The playground's bundle carries both modes; the page follows the viewer."""
+    assert '[data-nxv-theme="dark"]' in page
+    assert "@media (prefers-color-scheme: dark)" in page
+    assert "attributeFilter: ['data-theme']" in page
     assert "body { background: var(--ground)" in page
 
 
-def test_charts_are_drawn_when_the_renderer_is_available(page):
-    from nexcraftviz.render import available
+def test_charts_are_mounted_the_way_the_playground_mounts_them(page):
+    """A tester asked why the report looked nothing like the playground: it drew
+    static SVG with none of the playground's stylesheet or Vega config."""
+    assert page.count('class="nxv-chart"') >= 2
+    assert "window.__nxvSpecs" in page and "function vegaConfig()" in page
+    assert "https://cdn.jsdelivr.net/npm/vega-embed@6.26.0" in page
 
-    if available():
-        assert page.count('<figure class="plate">') >= 2
-        assert "<svg" in page
-    else:
-        assert "install the render extra" in page
+
+def test_a_single_number_is_a_kpi_card_not_a_text_mark(tmp_path: Path):
+    from tests.test_kpi_from_vega import LIVE_SINGLE_NUMBER
+
+    run_path = tmp_path / "run-1.json"
+    run_path.write_text(json.dumps({"at": "2026-09-10T11:00:00", "results": [
+        {"scenario": "single_number", "passed": True, "question": "What is total revenue?",
+         "spec": LIVE_SINGLE_NUMBER},
+    ]}))
+    page = build_report(run_path=run_path)
+    assert '<span class="nxv-kpi__value">447</span>' in page
+    assert 'id="s-single_number"' not in page  # no Vega mount for it
 
 
 def test_a_page_can_omit_its_document_shell(tmp_path: Path):

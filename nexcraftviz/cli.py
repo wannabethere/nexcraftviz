@@ -96,6 +96,10 @@ def main(argv: list[str] | None = None) -> int:
     p_eval.add_argument("--skill", default="", help="Only this skill.")
     p_eval.add_argument("--model", default="", help="Override OPENAI_MODEL.")
     p_eval.add_argument("--json", action="store_true")
+    p_eval.add_argument(
+        "--no-save", action="store_true",
+        help="Do not write eval-*.json to harness/results (written by default).",
+    )
 
     p_harness = sub.add_parser(
         "harness", help="Set up, check, run and report on the chart pipeline."
@@ -467,6 +471,13 @@ def _cmd_eval(args: argparse.Namespace) -> int:
         argv += ["--model", args.model]
     if args.json:
         argv += ["--json"]
+    if not args.no_save:
+        try:
+            from harness.run import RESULTS_DIR as results_dir
+        except ImportError:  # an installed package ships no harness directory
+            results_dir = None
+        if results_dir is not None:
+            argv += ["--save", str(results_dir)]
     return eval_main(argv)
 
 

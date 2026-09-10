@@ -161,6 +161,65 @@ def render_kpi(kpi: KpiCard | Spec | dict[str, Any]) -> str:
     return f'<div class="nxv-kpi nxv-kpi--{escape(subtype)}">{"".join(parts)}</div>'
 
 
+def kpi_from_vega(spec: Spec | dict[str, Any]) -> KpiCard | None:
+    """A Vega-Lite spec that only prints one number, read back as a KPI card.
+
+    Generated KPIs arrive as a bare ``text`` mark over a single row: valid,
+    compiled, and drawn as a small number in the corner of an empty canvas.
+    The playground draws a KPI as card furniture — label, value, unit, delta —
+    and so does lexy_ui, so this reads the value back out for any host that
+    wants the same. ``None`` when the spec draws anything more than that.
+    """
+    spec = spec if isinstance(spec, Spec) else Spec(spec)
+    if spec.family != "vega-lite":
+        return None
+    views = spec.views()
+    if not views or any(view.mark_type != "text" for view in views):
+        return None
+    rows = spec.data_values or _view_rows(views[0].node)
+    if len(rows) != 1:
+        return None
+
+    for _, channel, definition in spec.encodings():
+        field = definition.get("field")
+        if channel != "text" or not isinstance(field, str) or field not in rows[0]:
+            continue
+        value = rows[0][field]
+        if _as_number(value) is None:
+            continue
+        fmt = definition.get("format")
+        shown: float | str = _d3_number(value, fmt) if isinstance(fmt, str) and fmt else value
+        label = _title_text(spec.raw.get("title")) or field.replace("_", " ").capitalize()
+        return KpiCard(label=label, value=shown)
+    return None
+
+
+def _view_rows(node: dict[str, Any]) -> list[dict[str, Any]]:
+    data = node.get("data")
+    values = data.get("values") if isinstance(data, dict) else None
+    return [row for row in values if isinstance(row, dict)] if isinstance(values, list) else []
+
+
+def _title_text(title: Any) -> str:
+    if isinstance(title, dict):
+        title = title.get("text")
+    if isinstance(title, list):
+        title = " ".join(str(part) for part in title)
+    return title.strip() if isinstance(title, str) else ""
+
+
+def _d3_number(value: Any, fmt: str) -> str:
+    """The d3 formats a generated KPI uses — ``d``, ``,d``, ``.0f``, ``$,.0f``,
+    ``.1%`` — on top of :func:`_format_number`, which has no ``d`` and no
+    currency."""
+    currency = fmt.startswith("$")
+    body = fmt[1:] if currency else fmt
+    if body.endswith("d"):
+        body = body[:-1] + ".0f"
+    text = _format_number(value, body or ",")
+    return f"${text}" if currency else text
+
+
 # ---------------------------------------------------------------------------
 # cards and pages
 # ---------------------------------------------------------------------------

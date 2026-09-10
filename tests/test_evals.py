@@ -449,3 +449,29 @@ async def test_an_all_strict_run_carries_no_warning() -> None:
     )
     rendered = Report(results=[result]).render()
     assert "NOT strict" not in rendered and "NOT STRICT" not in rendered
+
+
+def test_a_saved_eval_carries_what_the_html_report_reads(tmp_path):
+    """A live pass printed 33/33 and wrote nothing, so the report could not
+    show it without paying for the run again."""
+    import json as _json
+
+    from harness.html_report import build_report
+    from nexcraftviz.evals.cases import Case
+    from nexcraftviz.evals.runner import CaseResult, Report, save_report
+
+    case = Case(id="plan-demo", skill="viz.plan", instruction="which region leads?",
+                inputs={"question": "which region leads?"}, checks="a ranking is a bar")
+    result = CaseResult(case=case, ok=True, decided_right=True,
+                        binding="json_schema_strict", answer={"status": "ok"},
+                        meta={"tokens_in": 10, "tokens_out": 2, "model": "m"})
+    path = save_report(Report(results=[result], model="gpt-test"), tmp_path)
+
+    saved = _json.loads(path.read_text())
+    assert path.name.startswith("eval-") and saved["model"] == "gpt-test"
+    row = saved["results"][0]
+    assert row["tokens"] == {"tokens_in": 10, "tokens_out": 2}
+    assert {"id", "skill", "checks", "instruction", "ok", "binding", "answer",
+            "artifact", "notes", "missing"} <= set(row)
+    html = build_report(eval_path=path, run_path=None)
+    assert "plan-demo" in html and "a ranking is a bar" in html
