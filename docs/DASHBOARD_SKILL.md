@@ -1,7 +1,10 @@
 # The dashboard skill — design
 
-**Status: design.** How nexcraftviz builds dashboards out of widgets and hands
-them to a host to publish, with the workflows defined as data rather than code.
+**Status: built (v1).** How nexcraftviz builds dashboards out of widgets and
+hands them to a host to publish, with the workflows defined as data rather than
+code. The code is `nexcraftviz/workflows/`; the shipped skill is
+`nexcraftviz/workflows/skills/dashboard.yaml`; the endpoints are live in
+`nexcraftviz serve`.
 Host-specific integration — a host's storage shapes, its UI, its publish calls —
 lives in that host's bridge, not here.
 
@@ -24,8 +27,9 @@ Dashboard            title, template, layout (12-col {i,x,y,w,h}), state draft|p
     └── table        columns (cell renderers) + rows     (optional)
 ```
 
-Today `Widget` has charts, KPI cards and tables as tiles, but no narration, and
-there is no dashboard object (see `DASHBOARDS.md`).
+`Widget` carries `narration` and `table` (document version 2), and
+`dashboard.layout` produces a `nexcraftviz.dashboard` document: the widgets plus
+their `{i, x, y, w, h}` placements on the 12-column grid.
 
 ### The widget document, version 2
 
@@ -48,7 +52,8 @@ there is no dashboard object (see `DASHBOARDS.md`).
 
 ## The skill file
 
-One YAML file per skill, e.g. `nexcraftviz/workflows/dashboard.yaml`.
+One YAML file per skill — the shipped one is
+`nexcraftviz/workflows/skills/dashboard.yaml`; the excerpt below is its shape.
 **Intents** are what the user starts with; **workflows** are declared steps;
 **actions** are the step vocabulary, each registered in code once — so a new
 workflow is a change to data, not to code.
@@ -99,12 +104,13 @@ workflows:
 |---|---|---|---|
 | `chart.create` | nexcraftviz | plan → generate → gates → critic | exists (`/v1/chart/create`) |
 | `chart.edit` | nexcraftviz | one instruction against a chart | exists (`/v1/chart/annotate`) |
-| `widget.compose` | nexcraftviz | charts, KPIs, table → one widget | exists (`viz.compose`); needs narration + table parts |
-| `widget.narrate` | nexcraftviz | headline, summary, points, stored on the widget | skill exists (`viz.narrate`); result not stored |
-| `widget.table` | nexcraftviz | rows → rich table with cell renderers | `TableSpec` exists; no action |
+| `widget.compose` | nexcraftviz | charts, KPIs, narration, table → one widget | shipped |
+| `widget.narrate` | nexcraftviz | headline, summary, points, stored on the widget | shipped |
+| `widget.table` | nexcraftviz | rows → rich table with cell renderers | shipped |
 | `widget.place` | nexcraftviz | re-span and reorder tiles | exists (`viz.place`) |
-| `dashboard.suggest_questions` | nexcraftviz or host | the questions an intent needs | new |
-| `dashboard.layout` | nexcraftviz | widgets → 12-col grid, from a template | new (`DASHBOARDS.md` D1–D3) |
+| `widget.extend` | nexcraftviz | add charts, a narration or a table to a widget | shipped |
+| `dashboard.suggest_questions` | nexcraftviz | the questions an intent needs (`viz.suggest_questions`) | shipped |
+| `dashboard.layout` | nexcraftviz | widgets → 12-col grid, sized by content | shipped; templates open (D2) |
 | `dashboard.suggest_groups` | nexcraftviz | "these three belong together" — offered, never applied | new (D4) |
 | `host.query` | host | question → SQL → rows | the host's |
 | `host.save_draft` | host | persist a draft dashboard | the host's |
@@ -171,6 +177,19 @@ Host UI                      nexcraftviz                        Host backend
 `status` is `running | paused | needs_host | done | failed`. A `needs_host`
 run's `pending` is `{kind: "host", action: "host.query", requests: [...]}`; the
 host resumes with `{host_result: {...}}` keyed by request id.
+
+## What shipped in v1
+
+- **N1–N4 below**, with one deliberate narrowing: a workflow called by another
+  (`workflow.build_widget`) runs straight through, so pauses and host steps
+  live only in the top-level workflow. The loader enforces it.
+- `dashboard.suggest_questions` is a model skill, `viz.suggest_questions`, with
+  eval cases. Without a model it offers the question as asked.
+- `dashboard.layout` is deterministic: widgets are sized by what they hold (a
+  KPI strip is short, one chart is half width, several are a full row, a
+  narration or table adds height) and packed left to right. Template-driven
+  layout (`DASHBOARDS.md` D2) is still open.
+- Runs live in memory for an hour (`RunStore`).
 
 ## Work
 

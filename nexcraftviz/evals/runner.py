@@ -291,7 +291,8 @@ def _check_outcome(case: Case, outcome: Any) -> tuple[bool, list[str]]:
 #: raw payload instead. `viz.generate` is graded raw too, inside
 #: `_check_outcome`, for the same reason: tier-2 repair rewrites a bad
 #: `temporal` back to `nominal`.
-GRADED_RAW = frozenset({"viz.plan", "viz.manage", "viz.compose", "viz.critique"})
+GRADED_RAW = frozenset({"viz.plan", "viz.manage", "viz.compose", "viz.critique",
+                        "viz.suggest_questions"})
 
 #: The `expect` keys the scorer reads, per skill. A test asserts every case uses
 #: only these — a mistyped key would otherwise check nothing and pass forever.
@@ -300,6 +301,7 @@ EXPECT_KEYS: dict[str, frozenset[str]] = {
     "viz.manage": frozenset({"actions", "status", "widget_parts"}),
     "viz.compose": frozenset({"span", "first", "last", "titled"}),
     "viz.critique": frozenset({"answers_question"}),
+    "viz.suggest_questions": frozenset({"min_questions", "max_questions"}),
 }
 
 #: Titles that name the container rather than what is in it.
@@ -381,6 +383,14 @@ def check_decision(case: Case, raw: Any) -> list[str]:
             )
         elif wanted_verdict is False and not raw.complaint.strip():
             problems.append("rejected without a complaint — nothing a regeneration can act on")
+
+    elif case.skill == "viz.suggest_questions":
+        texts = [" ".join(q.text.lower().split()) for q in raw.questions if q.text.strip()]
+        low, high = expect.get("min_questions", 1), expect.get("max_questions", 99)
+        if not low <= len(texts) <= high:
+            problems.append(f"{len(texts)} questions, expected {low} to {high}")
+        if len(set(texts)) != len(texts):
+            problems.append("the same question proposed twice")
 
     return problems
 

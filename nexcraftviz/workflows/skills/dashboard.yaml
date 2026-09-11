@@ -1,0 +1,131 @@
+# The dashboard skill: widgets out of charts, a dashboard out of widgets, and a
+# person's yes before anything is published. Data, not code — change a workflow
+# here and the loader checks it before anything runs.
+#
+# Free text is quoted: a `?` or `:` inside an unquoted flow mapping is YAML
+# syntax, not prose.
+skill: dashboard
+version: 1
+summary: "Build widgets, arrange them into a dashboard, and publish it."
+
+intents:
+  - id: from_question
+    label: "Build a dashboard that answers a question"
+    workflow: build_dashboard
+    asks:
+      question: "What should this dashboard answer?"
+
+  - id: from_widgets
+    label: "Arrange widgets I already have"
+    workflow: assemble_dashboard
+    asks:
+      title:
+        prompt: "What should the dashboard be called?"
+        required: false
+      widgets:
+        prompt: "Which widgets should go on it?"
+        type: widgets
+
+  - id: enrich_widget
+    label: "Add a narration, a table or another chart to a widget"
+    workflow: enrich_widget
+    asks:
+      widget:
+        prompt: "Which widget?"
+        type: widget
+      add_narration:
+        prompt: "Add a narration of what it shows?"
+        type: boolean
+        required: false
+      add_table:
+        prompt: "Add its data as a table?"
+        type: boolean
+        required: false
+      chart_question:
+        prompt: "Add a chart that answers…"
+        required: false
+
+workflows:
+  # One widget: a chart for a question, and — when the options say so — a
+  # narration of it and its rows as a table.
+  build_widget:
+    inputs: [question, rows]
+    options: {narration: true, table: false}
+    steps:
+      - id: chart
+        uses: chart.create
+        with: {question: $inputs.question, rows: $inputs.rows}
+      - id: narration
+        uses: widget.narrate
+        when: $options.narration
+        with: {chart: $steps.chart}
+      - id: table
+        uses: widget.table
+        when: $options.table
+        with: {rows: $inputs.rows, title: $inputs.question}
+      - id: widget
+        uses: widget.compose
+        with: {charts: [$steps.chart], narration: $steps.narration, table: $steps.table}
+
+  build_dashboard:
+    steps:
+      - id: questions
+        uses: dashboard.suggest_questions
+        with: {question: $intent.question}
+      - id: pick
+        pause: select
+        prompt: "Which of these should be on the dashboard?"
+        options: $steps.questions
+      - id: data
+        uses: host.query
+        for_each: $steps.pick
+        with: {question: $item.text}
+      - id: widgets
+        uses: workflow.build_widget
+        for_each: $steps.data
+        with: {question: $item.question, rows: $item.rows}
+      - id: dashboard
+        uses: dashboard.layout
+        with: {title: $intent.question, widgets: $steps.widgets}
+      - id: review
+        pause: approve
+        prompt: "Publish this dashboard?"
+        show: $steps.dashboard
+      - id: publish
+        uses: host.publish
+        with: {dashboard: $steps.dashboard}
+
+  assemble_dashboard:
+    steps:
+      - id: dashboard
+        uses: dashboard.layout
+        with: {title: $intent.title, widgets: $intent.widgets}
+      - id: review
+        pause: approve
+        prompt: "Publish this dashboard?"
+        show: $steps.dashboard
+      - id: publish
+        uses: host.publish
+        with: {dashboard: $steps.dashboard}
+
+  enrich_widget:
+    steps:
+      - id: narration
+        uses: widget.narrate
+        when: $intent.add_narration
+        with: {widget: $intent.widget}
+      - id: table
+        uses: widget.table
+        when: $intent.add_table
+        with: {widget: $intent.widget}
+      - id: data
+        uses: host.query
+        when: $intent.chart_question
+        with: {question: $intent.chart_question}
+      - id: chart
+        uses: chart.create
+        when: $intent.chart_question
+        with: {question: $intent.chart_question, rows: $steps.data.rows}
+      - id: widget
+        uses: widget.extend
+        with: {widget: $intent.widget, charts: [$steps.chart], narration: $steps.narration, table: $steps.table}

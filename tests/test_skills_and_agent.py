@@ -211,6 +211,8 @@ def _inputs_for(name: str) -> dict:
         return {"instruction": "sort descending", "spec": CHART, "rows": ROWS}
     # No silent fallback: a new skill should fail here rather than be handed an
     # edit-shaped input that happens to validate and prove nothing.
+    if name == "viz.suggest_questions":
+        return {"question": "How are we doing on compliance training?", "count": 4}
     raise AssertionError(f"no test input defined for {name!r}")
 
 

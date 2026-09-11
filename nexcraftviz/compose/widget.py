@@ -155,6 +155,10 @@ class Widget(BaseModel):
     description: str = ""
     layout: str = "two_column_grid"
     nodes: list[Node] = Field(default_factory=list)
+    narration: dict[str, Any] | None = Field(
+        default=None, description="What the charts show: headline, summary, points.",
+    )
+    table: Any = Field(default=None, description="A table payload shown with the charts.")
 
     # -- inspection ---------------------------------------------------------
 
@@ -249,6 +253,17 @@ class Widget(BaseModel):
                 f"{description}</div>"
             )
 
+        if self.narration:
+            body = _render_narration(self.narration) + body
+        if self.table is not None:
+            from nexcraftviz.render.html import render_card, render_table
+
+            body += render_card(
+                title="",
+                body=render_table(_as_spec(self.table, where="widget table"),
+                                  max_rows=max_table_rows),
+                extra_class="nxv-widget__tile nxv-span--full",
+            )
         return (
             f'<section class="nxv-widget nxv-widget--{escape(self.layout)}">'
             f'{header}<div class="nxv-grid--12">{body}</div></section>'
@@ -263,14 +278,21 @@ class Widget(BaseModel):
         object, and pretending otherwise is how a KPI tile ends up handed to a
         Vega renderer that cannot draw it.
         """
-        return {
+        out: dict[str, Any] = {
             "kind": "nexcraftviz.widget",
-            "version": 1,
+            "version": 2,
             "title": self.title,
             "description": self.description,
             "layout": self.layout,
             "nodes": [_node_to_dict(node) for node in self.nodes],
         }
+        # Version 2: what the charts show, and their rows as a table, travel
+        # with the widget rather than beside it.
+        if self.narration:
+            out["narration"] = self.narration
+        if self.table is not None:
+            out["table"] = _as_spec(self.table, where="widget table").raw
+        return out
 
     def to_json(self, *, indent: int | None = 2) -> str:
         return json.dumps(self.to_dict(), indent=indent, default=str)
@@ -282,6 +304,8 @@ class Widget(BaseModel):
             description=str(data.get("description") or ""),
             layout=str(data.get("layout") or "two_column_grid"),
             nodes=[_node_from_dict(entry) for entry in (data.get("nodes") or [])],
+            narration=data.get("narration") if isinstance(data.get("narration"), dict) else None,
+            table=Spec(data["table"]) if isinstance(data.get("table"), dict) else None,
         )
 
 
@@ -349,6 +373,21 @@ def render_stats(stats: list[Stat]) -> str:
             f'<span class="nxv-stat__value">{escape(value)}{unit}</span></div>'
         )
     return f'<div class="nxv-stats">{"".join(cells)}</div>'
+
+
+def _render_narration(narration: dict[str, Any]) -> str:
+    """What the charts show, as a full-width card above them."""
+    from nexcraftviz.render.html import escape, render_card
+
+    summary = str(narration.get("summary") or "")
+    points = [p.get("text", "") if isinstance(p, dict) else str(p)
+              for p in narration.get("points") or []]
+    body = f'<p class="nxv-narration__summary">{escape(summary)}</p>' if summary else ""
+    if any(points):
+        items = "".join(f"<li>{escape(point)}</li>" for point in points if point)
+        body += f'<ul class="nxv-narration__points">{items}</ul>'
+    return render_card(title=str(narration.get("headline") or ""), body=body,
+                       extra_class="nxv-widget__tile nxv-span--full nxv-widget__narration")
 
 
 def _render_group(group: Group, max_table_rows: int, id_prefix: str = "") -> str:

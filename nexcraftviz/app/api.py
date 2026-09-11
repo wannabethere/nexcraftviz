@@ -171,6 +171,23 @@ def _token_matches(headers: Any, expected: str) -> bool:
     return any(hmac.compare_digest(value.encode(), target) for value in presented)
 
 
+class StartRun(BaseModel):
+    """Start a skill run: which intent, and the answers to its asks."""
+
+    intent: str
+    answers: dict[str, Any] = Field(default_factory=dict)
+    inputs: dict[str, Any] = Field(default_factory=dict)
+    options: dict[str, Any] = Field(default_factory=dict)
+    language: str = "English"
+
+
+class ResumeRun(BaseModel):
+    """Answer a pause with `answer`, or report a host step with `host_result`."""
+
+    answer: Any = None
+    host_result: Any = None
+
+
 def create_app(
     store: SessionStore | None = None,
     *,
@@ -422,6 +439,59 @@ def create_app(
         return result
 
     # -- the embed ---------------------------------------------------------
+
+    # -- workflows: skills defined as data -----------------------------------
+    # A skill file's intents are what a host offers; a run advances until it
+    # needs a person (paused) or the host (needs_host), and is resumed with
+    # the answer. See docs/DASHBOARD_SKILL.md.
+    from nexcraftviz.workflows import Executor, RunStore, WorkflowError, builtin_skills
+
+    workflow_skills = builtin_skills()
+    runs = RunStore()
+
+    def _run_or_404(run_id: str) -> Any:
+        run = runs.get(run_id)
+        if run is None:
+            raise HTTPException(404, f"no run {run_id!r} — finished runs expire after an hour")
+        return run
+
+    @app.get("/v1/workflows")
+    def list_workflows() -> dict[str, Any]:
+        return {"skills": [skill.outline() for skill in workflow_skills.values()]}
+
+    @app.post("/v1/workflows/{skill}/runs")
+    async def start_run(skill: str, body: StartRun) -> dict[str, Any]:
+        if skill not in workflow_skills:
+            raise HTTPException(404, f"no skill {skill!r}")
+        try:
+            run = await Executor(workflow_skills, llm=llm).start(
+                skill, body.intent, answers=body.answers, inputs=body.inputs,
+                options=body.options, language=body.language,
+            )
+        except WorkflowError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        runs.put(run)
+        return run.public()
+
+    @app.get("/v1/workflows/runs/{run_id}")
+    def get_run(run_id: str) -> dict[str, Any]:
+        return _run_or_404(run_id).public()
+
+    @app.post("/v1/workflows/runs/{run_id}/resume")
+    async def resume_run(run_id: str, body: ResumeRun) -> dict[str, Any]:
+        run = _run_or_404(run_id)
+        try:
+            await Executor(workflow_skills, llm=llm).resume(
+                run, answer=body.answer, host_result=body.host_result
+            )
+        except WorkflowError as exc:
+            raise HTTPException(409, str(exc)) from exc
+        runs.put(run)
+        return run.public()
+
+    @app.delete("/v1/workflows/runs/{run_id}")
+    def cancel_run(run_id: str) -> dict[str, Any]:
+        return {"deleted": runs.drop(run_id)}
 
     @app.get("/embed/nexcraftviz.js")
     def embed_script() -> Any:

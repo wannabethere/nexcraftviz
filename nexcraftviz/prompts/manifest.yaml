@@ -38,3 +38,7 @@ prompts:
     file: viz.narrate.txt
     version: 1
     output: NarrateOut
+  viz.suggest_questions:
+    file: viz.suggest_questions.txt
+    version: 1
+    output: SuggestOut

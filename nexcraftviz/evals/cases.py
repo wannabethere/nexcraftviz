@@ -458,9 +458,32 @@ CRITIQUE_CASES: list[Case] = [
     ),
 ]
 
+SUGGEST_CASES: list[Case] = [
+    Case(
+        id="suggest-covers-the-question",
+        skill="viz.suggest_questions",
+        instruction="How are we doing on compliance training this quarter?",
+        inputs={"question": "How are we doing on compliance training this quarter?",
+                "count": 5},
+        expect={"min_questions": 3, "max_questions": 5},
+        checks="a dashboard question becomes 3–5 distinct chart questions — one chart's "
+               "worth each, never the same chart twice in other words",
+    ),
+    Case(
+        id="suggest-stays-in-context",
+        skill="viz.suggest_questions",
+        instruction="Where are we losing candidates?",
+        inputs={"question": "Where are we losing candidates?", "count": 4,
+                "context": "Table applications(candidate, stage, department, source, "
+                           "applied_at, stage_changed_at)"},
+        expect={"min_questions": 3, "max_questions": 4},
+        checks="with the data described, the questions stay inside it",
+    ),
+]
+
 ALL_CASES: list[Case] = [
     *EDIT_CASES, *GENERATE_CASES, *PLACE_CASES, *NARRATE_CASES,
-    *PLAN_CASES, *MANAGE_CASES, *COMPOSE_CASES, *CRITIQUE_CASES,
+    *PLAN_CASES, *MANAGE_CASES, *COMPOSE_CASES, *CRITIQUE_CASES, *SUGGEST_CASES,
 ]
 
 
