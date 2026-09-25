@@ -36,6 +36,12 @@ dev = [
     "mypy>=1.9",
 ]
 
+[project.urls]
+Homepage = "https://github.com/wannabethere/nexcraftviz"
+Repository = "https://github.com/wannabethere/nexcraftviz"
+Issues = "https://github.com/wannabethere/nexcraftviz/issues"
+Documentation = "https://wannabethere.github.io/nexcraftviz/docs/capabilities.html"
+
 [project.scripts]
 nexcraftviz = "nexcraftviz.cli:main"
 

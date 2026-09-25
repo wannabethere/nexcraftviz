@@ -1,0 +1,33 @@
+nexcraftviz
+Copyright the nexcraftviz contributors.
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+It also contains, and derives from, material under the BSD 3-Clause licence.
+Full texts are in `licenses/`.
+
+--------------------------------------------------------------------------------
+Vega-Lite — https://github.com/vega/vega-lite
+Copyright (c) 2015, University of Washington Interactive Data Lab. BSD 3-Clause.
+Licence: licenses/vega-lite-LICENSE
+
+  * `nexcraftviz/spec/schemas/vega-lite-v5.schema.json.gz` is the Vega-Lite v5
+    JSON schema, bundled verbatim (gzipped) so tier-3 validation needs no
+    network.
+
+--------------------------------------------------------------------------------
+vega-themes — https://github.com/vega/vega-themes
+Copyright (c) 2016, University of Washington Interactive Data Lab. BSD 3-Clause.
+Licence: licenses/vega-themes-LICENSE
+
+  * `nexcraftviz/theme/presets/powerbi.yaml` and
+    `nexcraftviz/theme/presets/carbon-g90.yaml` are derived from the `powerbi`
+    and `carbong90` configs: each preset's `vega_overrides` block is that
+    theme's config verbatim, so charts render identically to hosts that hand
+    vega-themes straight to their renderer. Regenerate with
+    `python -m nexcraftviz.theme._generate_presets`.
+
+--------------------------------------------------------------------------------
+Not bundled, but loaded at runtime by the playground pages and the embed
+script: vega, vega-lite and vega-embed, from a CDN. Rendering to SVG and PNG
+uses vl-convert-python, an optional dependency. Each carries its own licence.
