@@ -785,6 +785,7 @@ def _page(*, title: str, lede: str, body: str, nav_active: str) -> str:
         ("widgets", "widgets.html", "Combining charts"),
         ("pipeline", "pipeline.html", "Pipeline & progress"),
         ("gallery", "gallery.html", "Corpus gallery"),
+        ("capabilities", "capabilities.html", "What it can do"),
     )
     nav = "".join(
         '<a href="{href}" class="{cls}">{label}</a>'.format(
@@ -827,6 +828,216 @@ def _humanise(name: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# capabilities — what it draws, what to ask for, what comes back
+# ---------------------------------------------------------------------------
+
+#: Per chart type: enough questions and rows to see the shape of the ask.
+#: Two hundred questions on one page is a corpus dump, not a guide.
+CAPABILITY_QUESTIONS = 3
+CAPABILITY_ROWS = 4
+
+
+def build_capabilities() -> str:
+    """Every chart type, the questions it answers, its data, and its output.
+
+    Generated from the corpus, so it cannot drift from what the planner will
+    choose: the pairs shown here are the ones the recommender ranks and the
+    generator adapts.
+    """
+    corpus = seed()
+    counts = corpus.chart_type_counts()
+    ordered = sorted(counts, key=lambda name: (-counts[name], name))
+    cards = "".join(
+        _capability_card(name, corpus.by_chart_type(name), index)
+        for index, name in enumerate(ordered)
+    )
+    families = sorted({pair.family for pair in corpus})
+    filters = "".join(
+        f'<button type="button" data-filter="{escape(family)}">{escape(family)}</button>'
+        for family in families
+    )
+    body = (
+        _capability_summary(corpus)
+        + '<div class="nxv-filters"><button type="button" data-filter="" '
+        f'aria-pressed="true">all</button>{filters}</div>'
+        f'<div class="nxv-gallery">{cards}</div>'
+        + _beyond_charts()
+    )
+    return _page(
+        title="nexcraftviz — what it can do",
+        lede=(
+            f"{len(ordered)} chart types, drawn from {len(corpus)} worked examples. "
+            "For each: what to ask for it in plain language, the columns it needs, "
+            "and what comes back — a Vega-Lite chart, a KPI card or a rich table."
+        ),
+        body=body,
+        nav_active="capabilities",
+    )
+
+
+def _capability_summary(corpus: Any) -> str:
+    from nexcraftviz.compose.layout import LAYOUTS
+    from nexcraftviz.spec.ops import OP_REGISTRY
+    from nexcraftviz.theme import available_themes
+
+    stats = (
+        (len(corpus.chart_type_counts()), "chart types"),
+        (len(corpus), "worked examples"),
+        (len(OP_REGISTRY), "edit operations"),
+        (len(LAYOUTS), "widget layouts"),
+        (len(available_themes()), "themes"),
+    )
+    cells = "".join(
+        f'<div class="nxv-stat"><span class="nxv-stat__label">{escape(label)}</span>'
+        f'<span class="nxv-stat__value">{value}</span></div>'
+        for value, label in stats
+    )
+    return f'<div class="nxv-stats">{cells}</div>'
+
+
+def _capability_card(chart_type: str, pairs: list[ChartPair], index: int) -> str:
+    pair = _representative(pairs)
+    parts: list[str] = []
+
+    questions = _example_questions(pairs)
+    if questions:
+        asked = "".join(f"<li>{escape(question)}</li>" for question in questions)
+        parts.append('<p class="nxv-card__subtitle">Ask for it like this</p>'
+                     f"<ul>{asked}</ul>")
+
+    parts.append('<p class="nxv-card__subtitle">Data in</p>' + _data_in(pair))
+    parts.append('<p class="nxv-card__subtitle">What comes back</p>' + _output(pair, index))
+
+    if pair.use_when:
+        good = "".join(f"<li>{escape(line)}</li>" for line in pair.use_when[:3])
+        parts.append(f'<p class="nxv-card__subtitle">Use when</p><ul>{good}</ul>')
+    if pair.do_not_use_when:
+        bad = "".join(f"<li>{escape(line)}</li>" for line in pair.do_not_use_when[:2])
+        parts.append(f'<p class="nxv-card__subtitle">Not when</p><ul>{bad}</ul>')
+    if pair.insight:
+        parts.append(f'<p class="nxv-insight">{escape(pair.insight)}</p>')
+
+    subtitle = f"{pair.family} · {len(pairs)} worked example(s)"
+    return (
+        f'<div class="nxv-card nxv-gallery__item" data-chart-type="{escape(pair.family)}">'
+        f'<div class="nxv-card__header"><h3 class="nxv-card__title">'
+        f"{escape(_humanise(chart_type))}</h3>"
+        f'<span class="nxv-card__subtitle">{escape(subtitle)}</span></div>'
+        f'<div class="nxv-card__body">{"".join(parts)}</div></div>'
+    )
+
+
+def _representative(pairs: list[ChartPair]) -> ChartPair:
+    """The example to show: one that ships a spec with rows, if any does."""
+    with_rows = [p for p in pairs if p.has_vega_spec and p.spec().data_values]
+    return (with_rows or pairs)[0]
+
+
+def _example_questions(pairs: list[ChartPair]) -> list[str]:
+    seen: set[str] = set()
+    questions: list[str] = []
+    for pair in pairs:
+        for question in pair.example_questions:
+            key = " ".join(question.lower().split())
+            if key and key not in seen:
+                seen.add(key)
+                questions.append(question)
+            if len(questions) == CAPABILITY_QUESTIONS:
+                return questions
+    return questions
+
+
+def _data_in(pair: ChartPair) -> str:
+    """The columns the chart needs, and a few rows of the worked example."""
+    columns = (pair.data_shape or {}).get("columns") or []
+    if columns:
+        rows = "".join(
+            f'<tr><td><code>{escape(column.get("name", ""))}</code></td>'
+            f'<td><code>{escape(column.get("type", ""))}</code></td></tr>'
+            for column in columns
+            if isinstance(column, dict)
+        )
+        shape = ('<table class="nxv-table"><thead><tr><th>column</th><th>type</th></tr>'
+                 f"</thead><tbody>{rows}</tbody></table>")
+    else:
+        shape = '<p class="nxv-overview">Whatever columns the rows carry.</p>'
+
+    sample = ""
+    if pair.has_vega_spec:
+        values = pair.spec().data_values
+        if values:
+            sample = ('<details class="nxv-details"><summary>Sample rows '
+                      f"({len(values)})</summary>"
+                      f"{render_table(build_table(values), max_rows=CAPABILITY_ROWS)}</details>")
+    return shape + sample
+
+
+def _output(pair: ChartPair, index: int) -> str:
+    if pair.family == "kpi-card":
+        return render_kpi(KpiCard.from_columns_schema(pair.columns_schema or {}))
+    if pair.family == "table-with-cells":
+        table = with_sample_rows(TableSpec.from_columns_schema(pair.columns_schema or []))
+        return (render_table(table, max_rows=CAPABILITY_ROWS)
+                + '<p class="nxv-warn">Rows synthesised — this pair ships none.</p>')
+    return render_chart_mount(pair.spec(), f"capability-{index}")
+
+
+def _beyond_charts() -> str:
+    """The rest of the vocabulary: editing, arranging, theming, whole dashboards."""
+    from typing import get_args
+
+    from nexcraftviz.compose.layout import LAYOUTS
+    from nexcraftviz.manager.decision import Action
+    from nexcraftviz.spec.ops import OP_REGISTRY
+    from nexcraftviz.theme import available_themes
+    from nexcraftviz.workflows import builtin_skills
+
+    operations = "".join(
+        f"<li><code>{escape(name)}</code> — "
+        f"{escape(_first_line(OP_REGISTRY[name].__doc__))}</li>"
+        for name in sorted(OP_REGISTRY)
+    )
+    said = ", ".join(f"<code>{escape(action)}</code>" for action in get_args(Action))
+    layouts = ", ".join(f"<code>{escape(name)}</code>" for name in sorted(LAYOUTS))
+    themes = ", ".join(f"<code>{escape(name)}</code>" for name in available_themes())
+
+    intents: list[str] = []
+    for skill in builtin_skills().values():
+        for intent in skill.intents:
+            steps = " → ".join(
+                step.uses or f"{step.pause} (a person)"
+                for step in skill.workflows[intent.workflow].steps
+            )
+            intents.append(f"<li><b>{escape(intent.label)}</b><br><code>{escape(steps)}</code></li>")
+
+    return (
+        _panel("Editing a chart, by instruction",
+               '<p class="nxv-overview">A change is an operation with an inverse, not a '
+               "regeneration: undo is free and a correct spec cannot be broken by "
+               f'"make the bars teal".</p><ul>{operations}</ul>')
+        + _panel("One instruction, several actions",
+                 f'<p class="nxv-overview">The manager reads free text and answers with '
+                 f"ordered steps: {said}. What it cannot do — a breakdown needing data "
+                 "that is not in the rows — it declines, with the reason.</p>")
+        + _panel("Arranging and theming",
+                 f'<p class="nxv-overview">Widget layouts: {layouts}. Themes: {themes} — '
+                 "applied after generation, so a hard-coded colour never defeats them.</p>")
+        + _panel("Whole dashboards, as workflows",
+                 '<p class="nxv-overview">Declared in a skill file: a person picks and '
+                 f"approves, the host queries and publishes.</p><ul>{''.join(intents)}</ul>")
+    )
+
+
+def _panel(title: str, body: str) -> str:
+    return (f'<section class="nxv-step"><h2 class="nxv-step__title">{escape(title)}</h2>'
+            f'<div class="nxv-step__body">{body}</div></section>')
+
+
+def _first_line(text: str | None) -> str:
+    return (text or "").strip().splitlines()[0] if text else ""
+
+
+# ---------------------------------------------------------------------------
 # writing
 # ---------------------------------------------------------------------------
 
@@ -841,6 +1052,7 @@ def write(out_dir: str | Path, *, limit: int | None = None) -> list[Path]:
         _write(target / "widgets.html", build_widgets()),
         _write(target / "pipeline.html", build_pipeline()),
         _write(target / "gallery.html", build_gallery(limit)),
+        _write(target / "capabilities.html", build_capabilities()),
         _write(target / "playground.css", _playground_css()),
         _write(target / "playground.js", _playground_js()),
     ]
