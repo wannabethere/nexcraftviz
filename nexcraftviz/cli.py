@@ -81,6 +81,11 @@ def main(argv: list[str] | None = None) -> int:
     p_gallery = sub.add_parser("gallery", help="Generate the playground pages.")
     p_gallery.add_argument("--out", default="playground", help="Output directory.")
     p_gallery.add_argument("--limit", type=int, help="Only this many corpus pairs.")
+    p_gallery.add_argument(
+        "--standalone",
+        help="Also write the capabilities page here as ONE self-contained file: "
+             "styles inlined, charts drawn, no scripts and no CDN.",
+    )
 
     p_serve = sub.add_parser("serve", help="Run the HTTP API and serve the embed.")
     p_serve.add_argument("--host", default="127.0.0.1")
@@ -392,6 +397,11 @@ def _cmd_gallery(args: argparse.Namespace) -> int:
 
     for path in write(args.out, limit=args.limit):
         print(f"wrote {path} ({path.stat().st_size} bytes)")
+    if args.standalone:
+        from nexcraftviz.gallery import write_standalone
+
+        path = write_standalone(args.standalone)
+        print(f"wrote {path} ({path.stat().st_size} bytes) — self-contained")
     return 0
 
 

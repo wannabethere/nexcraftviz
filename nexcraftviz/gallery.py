@@ -778,7 +778,15 @@ def _renderer_table(table: TableSpec) -> str:
     )
 
 
-def _page(*, title: str, lede: str, body: str, nav_active: str) -> str:
+def _page(*, title: str, lede: str, body: str, nav_active: str,
+          standalone: bool = False) -> str:
+    """The page shell.
+
+    ``standalone`` makes one file that needs nothing beside it: the stylesheet
+    inlined, no scripts, no CDN — because GitHub serves a repo's HTML as source
+    and the only ways anyone sees it rendered are Pages, a preview proxy or a
+    download, none of which will fetch its neighbours.
+    """
     links = (
         ("index", "index.html", "Reference renderer"),
         ("usecase", "usecase.html", "Walkthrough"),
@@ -787,23 +795,37 @@ def _page(*, title: str, lede: str, body: str, nav_active: str) -> str:
         ("gallery", "gallery.html", "Corpus gallery"),
         ("capabilities", "capabilities.html", "What it can do"),
     )
-    nav = "".join(
+    nav = "" if standalone else "".join(
         '<a href="{href}" class="{cls}">{label}</a>'.format(
             href=href, cls="is-active" if key == nav_active else "", label=label
         )
         for key, href, label in links
     )
+    if standalone:
+        from nexcraftviz.theme import load, to_bundle
+
+        bundle = to_bundle(load("nexcraftviz-light"), load("nexcraftviz-dark"))
+        head = f"<style>{bundle}\n{_playground_css()}\n{_PLATE_CSS}</style>"
+        controls = ""
+        scripts = ""
+    else:
+        head = (
+            '<link rel="stylesheet" href="../assets/nexcraftviz.css">'
+            '<link rel="stylesheet" href="playground.css">'
+            '<script src="https://cdn.jsdelivr.net/npm/vega@5"></script>'
+            '<script src="https://cdn.jsdelivr.net/npm/vega-lite@5"></script>'
+            '<script src="https://cdn.jsdelivr.net/npm/vega-embed@6"></script>'
+        )
+        controls = (f'<div class="nxv-controls"><nav class="nxv-nav">{nav}</nav>'
+                    '<div class="nxv-themes" id="themes"></div></div>')
+        scripts = '<script src="playground.js"></script>'
     return f"""<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{escape(title)}</title>
-<link rel="stylesheet" href="../assets/nexcraftviz.css">
-<link rel="stylesheet" href="playground.css">
-<script src="https://cdn.jsdelivr.net/npm/vega@5"></script>
-<script src="https://cdn.jsdelivr.net/npm/vega-lite@5"></script>
-<script src="https://cdn.jsdelivr.net/npm/vega-embed@6"></script>
+{head}
 </head>
 <body>
 <header class="nxv-page__header">
@@ -811,13 +833,10 @@ def _page(*, title: str, lede: str, body: str, nav_active: str) -> str:
     <h1>{escape(title)}</h1>
     <p class="nxv-lede">{lede}</p>
   </div>
-  <div class="nxv-controls">
-    <nav class="nxv-nav">{nav}</nav>
-    <div class="nxv-themes" id="themes"></div>
-  </div>
+  {controls}
 </header>
 <main>{body}</main>
-<script src="playground.js"></script>
+{scripts}
 </body>
 </html>
 """
@@ -837,7 +856,7 @@ CAPABILITY_QUESTIONS = 3
 CAPABILITY_ROWS = 4
 
 
-def build_capabilities() -> str:
+def build_capabilities(standalone: bool = False) -> str:
     """Every chart type, the questions it answers, its data, and its output.
 
     Generated from the corpus, so it cannot drift from what the planner will
@@ -848,19 +867,25 @@ def build_capabilities() -> str:
     counts = corpus.chart_type_counts()
     ordered = sorted(counts, key=lambda name: (-counts[name], name))
     cards = "".join(
-        _capability_card(name, corpus.by_chart_type(name), index)
+        _capability_card(name, corpus.by_chart_type(name), index, standalone)
         for index, name in enumerate(ordered)
     )
     families = sorted({pair.family for pair in corpus})
-    filters = "".join(
-        f'<button type="button" data-filter="{escape(family)}">{escape(family)}</button>'
-        for family in families
+    # The filter bar is driven by playground.js; a standalone page runs no
+    # script, and a row of buttons that do nothing is worse than none.
+    filters = "" if standalone else (
+        '<div class="nxv-filters"><button type="button" data-filter="" '
+        'aria-pressed="true">all</button>'
+        + "".join(
+            f'<button type="button" data-filter="{escape(family)}">{escape(family)}</button>'
+            for family in families
+        )
+        + "</div>"
     )
     body = (
         _capability_summary(corpus)
-        + '<div class="nxv-filters"><button type="button" data-filter="" '
-        f'aria-pressed="true">all</button>{filters}</div>'
-        f'<div class="nxv-gallery">{cards}</div>'
+        + filters
+        + f'<div class="nxv-gallery">{cards}</div>'
         + _beyond_charts()
     )
     return _page(
@@ -872,6 +897,7 @@ def build_capabilities() -> str:
         ),
         body=body,
         nav_active="capabilities",
+        standalone=standalone,
     )
 
 
@@ -895,7 +921,8 @@ def _capability_summary(corpus: Any) -> str:
     return f'<div class="nxv-stats">{cells}</div>'
 
 
-def _capability_card(chart_type: str, pairs: list[ChartPair], index: int) -> str:
+def _capability_card(chart_type: str, pairs: list[ChartPair], index: int,
+                     standalone: bool = False) -> str:
     pair = _representative(pairs)
     parts: list[str] = []
 
@@ -906,7 +933,8 @@ def _capability_card(chart_type: str, pairs: list[ChartPair], index: int) -> str
                      f"<ul>{asked}</ul>")
 
     parts.append('<p class="nxv-card__subtitle">Data in</p>' + _data_in(pair))
-    parts.append('<p class="nxv-card__subtitle">What comes back</p>' + _output(pair, index))
+    parts.append('<p class="nxv-card__subtitle">What comes back</p>'
+                 + _output(pair, index, standalone))
 
     if pair.use_when:
         good = "".join(f"<li>{escape(line)}</li>" for line in pair.use_when[:3])
@@ -972,13 +1000,51 @@ def _data_in(pair: ChartPair) -> str:
     return shape + sample
 
 
-def _output(pair: ChartPair, index: int) -> str:
+#: A drawn chart keeps its light ink, so it sits on a light plate in either
+#: theme rather than turning invisible on a dark page.
+_PLATE_CSS = """
+.nxv-plate { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 6px;
+  padding: 10px; overflow-x: auto; }
+.nxv-plate svg { display: block; max-width: 100%; height: auto; }
+"""
+
+
+def _chart_svg(spec: Spec) -> str:
+    """One chart, drawn now — for a page that will run no JavaScript."""
+    from nexcraftviz.render import RenderError, available, to_svg
+    from nexcraftviz.theme import apply_theme, load
+
+    if not available():
+        return '<p class="nxv-warn">Install the render extra to draw this chart.</p>'
+    try:
+        themed = apply_theme(spec, load("nexcraftviz-light")).spec
+        _fill_widths(themed.raw)
+        return f'<figure class="nxv-plate">{to_svg(themed)}</figure>'
+    except (RenderError, Exception) as exc:  # noqa: BLE001 - one chart must not sink the page
+        return f'<p class="nxv-warn">This chart did not draw: {escape(str(exc))}</p>'
+
+
+def _fill_widths(node: Any, width: int = 460) -> None:
+    """`width: "container"` means "fill the card"; a drawn SVG has no card."""
+    if isinstance(node, dict):
+        if node.get("width") == "container":
+            node["width"] = width
+        for value in node.values():
+            _fill_widths(value, width)
+    elif isinstance(node, list):
+        for item in node:
+            _fill_widths(item, width)
+
+
+def _output(pair: ChartPair, index: int, standalone: bool = False) -> str:
     if pair.family == "kpi-card":
         return render_kpi(KpiCard.from_columns_schema(pair.columns_schema or {}))
     if pair.family == "table-with-cells":
         table = with_sample_rows(TableSpec.from_columns_schema(pair.columns_schema or []))
         return (render_table(table, max_rows=CAPABILITY_ROWS)
                 + '<p class="nxv-warn">Rows synthesised — this pair ships none.</p>')
+    if standalone:
+        return _chart_svg(pair.spec())
     return render_chart_mount(pair.spec(), f"capability-{index}")
 
 
@@ -1057,6 +1123,13 @@ def write(out_dir: str | Path, *, limit: int | None = None) -> list[Path]:
         _write(target / "playground.js", _playground_js()),
     ]
     return written
+
+
+def write_standalone(path: str | Path) -> Path:
+    """The capabilities page as one file that needs nothing beside it."""
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    return _write(target, build_capabilities(standalone=True))
 
 
 def _write(path: Path, content: str) -> Path:
