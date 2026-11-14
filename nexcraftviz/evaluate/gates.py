@@ -112,7 +112,7 @@ def _renders(spec: Spec, *, plan: ChartPlan | None, rows: list[dict[str, Any]]) 
     if not available():
         return GateResult(gate="renders", passed=True,
                           detail="skipped — the `render` extra is not installed")
-    if spec.family in ("kpi", "table"):
+    if spec.family in ("kpi", "table", "board"):
         return GateResult(gate="renders", passed=True,
                           detail=f"skipped — {spec.family} is drawn by the frontend, not Vega")
     try:

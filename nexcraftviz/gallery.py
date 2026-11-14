@@ -26,6 +26,7 @@ from nexcraftviz.recommend.rules import recommend
 from nexcraftviz.render.html import (
     escape,
     render_card,
+    render_board,
     render_chart_mount,
     render_kpi,
     render_table,
@@ -421,6 +422,8 @@ def _gallery_card(pair: ChartPair, index: int) -> str:
     if pair.family == "kpi-card":
         kpi = KpiCard.from_columns_schema(pair.columns_schema or {})
         parts.append(render_kpi(kpi))
+    elif pair.family == "board":
+        parts.append(render_board(_board_of(pair)))
     elif pair.family == "table-with-cells":
         table = with_sample_rows(TableSpec.from_columns_schema(pair.columns_schema or []))
         synthetic = True
@@ -1036,7 +1039,17 @@ def _fill_widths(node: Any, width: int = 460) -> None:
             _fill_widths(item, width)
 
 
+def _board_of(pair: ChartPair) -> Any:
+    """A board pair drawn from its own example rows and layout."""
+    from nexcraftviz.board import BoardSpec, build_board
+
+    layout = BoardSpec.from_board_schema(pair.board_schema or {})
+    return build_board(pair.example_rows, title=pair.goal, **layout.model_dump())
+
+
 def _output(pair: ChartPair, index: int, standalone: bool = False) -> str:
+    if pair.family == "board":
+        return render_board(_board_of(pair))
     if pair.family == "kpi-card":
         return render_kpi(KpiCard.from_columns_schema(pair.columns_schema or {}))
     if pair.family == "table-with-cells":

@@ -25212,11 +25212,11 @@ pairs:
   goal: "Show how many records fall in each status."
   use_when:
     - "Rows are individual records (one project, ticket or deal per row) with a status column"
-    - "Question uses 'by status', 'breakdown by stage', 'each status'"
+    - "Question uses 'how many', 'number of', 'count'"
     - "No count column — the chart must count rows"
   do_not_use_when:
     - "The rows already carry a count per status → bar (pipeline by status)"
-    - "The question wants the records themselves → table_with_cells"
+    - "The question wants to see the records arranged by status, not counted → board"
   kinds:
     intent: part-of-whole
     shape: categorical-few
@@ -25302,9 +25302,9 @@ pairs:
       }
     }
   example_questions:
-    - "Show projects by status"
-    - "How many of these are in each status?"
-    - "Break the projects down by stage"
+    - "How many projects are in each status?"
+    - "How many of these are in each stage?"
+    - "Count the projects by status"
 
 - name: heatmap_resource_allocation
   chart_type: heatmap
@@ -25721,3 +25721,188 @@ pairs:
     - "Show the project pipeline status by region"
     - "Which regions have the most projects in each stage?"
     - "Break the pipeline down by region"
+
+# --- boards: records as cards in status lanes ---------------------------------
+
+- name: board_project_pipeline
+  chart_type: board
+  business_goal: "See every project where it sits in the delivery pipeline, and what each one is, in one view."
+  overview: "One lane per status in pipeline order, each project a card with its summary, region and segment, and how many people are assigned."
+  insight: "Read the lanes left to right and look for the one out of proportion — a crowded pre-sales or SOW lane is delivery work about to land; a card with nobody assigned in an active lane is a project no one is running."
+  purpose: "Board — projects as cards in status lanes."
+  goal: "Show the project pipeline as a board."
+  use_when:
+    - "Question uses 'board', 'kanban', 'pipeline view', 'status view', 'by status', 'each stage', 'as cards'"
+    - "One row per project with a status column of a handful of values"
+    - "The reader wants to see the projects themselves, not only how many"
+  do_not_use_when:
+    - "Question asks how many, or a count per status → bar"
+    - "Rows are already one count per status → bar"
+    - "Projects have start and end dates and timing matters → gantt"
+  kinds:
+    intent: progress
+    shape: categorical-many
+    family: board
+  data_shape:
+    columns:
+      - {"name": "project", "type": "string"}
+      - {"name": "description", "type": "string", "required": false}
+      - {"name": "status", "type": "string"}
+      - {"name": "region", "type": "string", "required": false}
+      - {"name": "segment", "type": "string", "required": false}
+      - {"name": "assigned", "type": "number", "required": false}
+  board_schema: |-
+    {
+      "group_by": "status",
+      "title_field": "project",
+      "description_field": "description",
+      "tag_fields": [
+        "region",
+        "segment"
+      ],
+      "badge_field": "assigned",
+      "badge_label": "assigned",
+      "order": [
+        "Pre-sales estimation",
+        "SOW in progress",
+        "In progress - Implementation",
+        "Active",
+        "On hold",
+        "Completed",
+        "Closed"
+      ],
+      "tones": {
+        "Active": "pass",
+        "Completed": "muted",
+        "On hold": "fix"
+      }
+    }
+  example_rows:
+    - {"project": "Fully-configurable extranet", "description": "Unit administration rollout across the regional offices, phase two.", "status": "Active", "region": "Lesotho", "segment": "Gov", "assigned": 2}
+    - {"project": "Virtual regional time-frame", "description": "Education information portal; scope agreed, build under way.", "status": "Active", "region": "Guam", "segment": "SMB", "assigned": 2}
+    - {"project": "Liberty Group", "description": "Migrate from the legacy learning platform.", "status": "In progress - Implementation", "region": "AMER", "segment": "SMB", "assigned": 3}
+    - {"project": "Streamlined empowering paradigm", "description": "Member onboarding redesign, delivered and signed off.", "status": "Completed", "region": "Guinea-Bissau", "segment": "SMB", "assigned": 2}
+    - {"project": "Cloned client-driven solution", "description": "Speech analytics pilot handed over to support.", "status": "Completed", "region": "Turkmenistan", "segment": "Enterprise", "assigned": 2}
+    - {"project": "Atlas data platform", "description": "Estimating integration effort with the client architects.", "status": "Pre-sales estimation", "region": "EMEA", "segment": "Enterprise", "assigned": 1}
+    - {"project": "Cedar mobile", "description": "Statement of work with procurement for review.", "status": "SOW in progress", "region": "APAC", "segment": "SMB", "assigned": 1}
+    - {"project": "Ember operations", "description": "Paused at the client's request until budget is confirmed.", "status": "On hold", "region": "EMEA", "segment": "Gov", "assigned": 0}
+  example_questions:
+    - "Show the project pipeline as a board"
+    - "Show me projects by status"
+    - "Give me the pipeline view"
+    - "What is in each stage of the delivery pipeline?"
+
+- name: board_deal_pipeline
+  chart_type: board
+  business_goal: "See the open deals in each sales stage, with who owns them and what they are worth."
+  overview: "One lane per stage, each deal a card with its account and owner, and its amount in the corner."
+  insight: "A lane heavy with high amounts close to the end is next quarter's number; a stage where deals sit with the same owner is where one person is the bottleneck."
+  purpose: "Board — deals as cards in sales-stage lanes."
+  goal: "Show deals by stage as a board."
+  use_when:
+    - "Question uses 'kanban', 'board', 'deal board', 'stage view', 'by stage'"
+    - "One row per deal or opportunity with a stage column"
+    - "The reader wants the deals themselves, not the conversion"
+  do_not_use_when:
+    - "Question asks about conversion or drop-off between stages → funnel"
+    - "Question asks for totals per stage → bar"
+  kinds:
+    intent: progress
+    shape: categorical-many
+    family: board
+  data_shape:
+    columns:
+      - {"name": "deal", "type": "string"}
+      - {"name": "account", "type": "string", "required": false}
+      - {"name": "stage", "type": "string"}
+      - {"name": "owner", "type": "string", "required": false}
+      - {"name": "amount", "type": "number", "required": false}
+  board_schema: |-
+    {
+      "group_by": "stage",
+      "title_field": "deal",
+      "subtitle_field": "account",
+      "tag_fields": [
+        "owner"
+      ],
+      "badge_field": "amount",
+      "order": [
+        "Qualified",
+        "Proposal",
+        "Negotiation",
+        "Won",
+        "Lost"
+      ],
+      "tones": {
+        "Won": "pass",
+        "Lost": "fail"
+      }
+    }
+  example_rows:
+    - {"deal": "Northwind renewal", "account": "Northwind", "stage": "Qualified", "owner": "Asha Rao", "amount": 48000}
+    - {"deal": "Halcyon expansion", "account": "Halcyon", "stage": "Proposal", "owner": "Ben Ortiz", "amount": 120000}
+    - {"deal": "Atlas new logo", "account": "Atlas", "stage": "Negotiation", "owner": "Chen Wei", "amount": 86000}
+    - {"deal": "Cedar upsell", "account": "Cedar", "stage": "Qualified", "owner": "Asha Rao", "amount": 22000}
+    - {"deal": "Beacon platform", "account": "Beacon", "stage": "Won", "owner": "Dana Kim", "amount": 150000}
+    - {"deal": "Ember pilot", "account": "Ember", "stage": "Lost", "owner": "Ben Ortiz", "amount": 15000}
+  example_questions:
+    - "Show the deals as a kanban board"
+    - "What deals are in each stage?"
+    - "Show the sales pipeline by stage as cards"
+
+- name: board_task_status
+  chart_type: board
+  business_goal: "See the work in flight: what is waiting, moving, stuck and done, and who has it."
+  overview: "One lane per task status, each task a card with its assignee and priority, and its size in points."
+  insight: "The blocked lane is the one to read first; then the in-progress lane — more cards there than people means work started and parked."
+  purpose: "Board — tasks as cards in status lanes."
+  goal: "Show tasks by status as a board."
+  use_when:
+    - "Question uses 'kanban', 'board', 'task board', 'what is blocked', 'in flight', 'sprint board'"
+    - "One row per task or ticket with a status column"
+    - "Fewer than about 150 records"
+  do_not_use_when:
+    - "Question asks how work is trending over days → cumulative_flow"
+    - "Question asks how much is left against time → burndown"
+  kinds:
+    intent: progress
+    shape: categorical-many
+    family: board
+  data_shape:
+    columns:
+      - {"name": "task", "type": "string"}
+      - {"name": "assignee", "type": "string", "required": false}
+      - {"name": "status", "type": "string"}
+      - {"name": "priority", "type": "string", "required": false}
+      - {"name": "points", "type": "number", "required": false}
+  board_schema: |-
+    {
+      "group_by": "status",
+      "title_field": "task",
+      "subtitle_field": "assignee",
+      "tag_fields": [
+        "priority"
+      ],
+      "badge_field": "points",
+      "badge_label": "pts",
+      "order": [
+        "To do",
+        "In progress",
+        "Blocked",
+        "Done"
+      ],
+      "tones": {
+        "Blocked": "fail",
+        "Done": "pass"
+      }
+    }
+  example_rows:
+    - {"task": "Configure SSO", "assignee": "Asha Rao", "status": "To do", "priority": "High", "points": 5}
+    - {"task": "Load historical data", "assignee": "Chen Wei", "status": "In progress", "priority": "High", "points": 8}
+    - {"task": "Write test scripts", "assignee": "Dana Kim", "status": "In progress", "priority": "Medium", "points": 3}
+    - {"task": "Train administrators", "assignee": "Eli Moss", "status": "Blocked", "priority": "Medium", "points": 2}
+    - {"task": "Set up sandbox", "assignee": "Ben Ortiz", "status": "Done", "priority": "Low", "points": 1}
+  example_questions:
+    - "Show the task board"
+    - "What is blocked and who has it?"
+    - "Show the sprint as a kanban board"

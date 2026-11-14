@@ -105,7 +105,7 @@ class PlanSkill(Skill[PlanIn, ChartPlan]):
                 result.failed.append(
                     ("viz.plan", f"plans fields the data does not have: {', '.join(invented)}")
                 )
-        if not plan.encodings and plan.chart_type not in ("kpi", "table_with_cells"):
+        if not plan.encodings and plan.chart_type not in ("kpi", "table_with_cells", "board"):
             result.warnings.append("plan has no encodings — the generator has nothing to build")
         return result
 

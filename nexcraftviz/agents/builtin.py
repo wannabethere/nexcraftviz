@@ -151,6 +151,9 @@ class GeneratorAgent(SkillAgent):
 
     async def run(self, ctx: StageContext) -> GenerateArtifact:
         started = time.perf_counter()
+        plan = getattr(ctx.stages, "plan", None) if ctx.stages else None
+        if plan is not None and plan.drawable and plan.chart_type == "board":
+            return self._board(ctx, plan, started)
         try:
             result, telemetry = await self.call(ctx)
         except SkillError as exc:
@@ -184,6 +187,35 @@ class GeneratorAgent(SkillAgent):
             )
         artifact.telemetry.retry_count = 1 if ctx.complaint else 0
         return artifact
+
+    def _board(self, ctx: StageContext, plan: Any, started: float) -> GenerateArtifact:
+        """A board is the rows regrouped, so it is built, not generated.
+
+        No model call: the plan said *board*, and which fields make the lanes
+        and the cards is read from its encodings and the rows. A model writing
+        the cards could only copy the rows or invent them.
+        """
+        from nexcraftviz.board.build import build_board, layout_hints_from_plan
+        from nexcraftviz.data.profile import profile_rows
+
+        known = set(profile_rows(ctx.rows).column_names)
+        board = build_board(ctx.rows, title=plan.metadata.title or "",
+                            **layout_hints_from_plan(plan, known))
+        telemetry = Telemetry(wall_ms=int((time.perf_counter() - started) * 1000),
+                              agent=f"{self.spec.name}:board")
+        if not board.lanes:
+            return GenerateArtifact(
+                status="failed",
+                reason_if_not_ok="no column in these rows has a handful of values to make lanes from",
+                telemetry=telemetry,
+            )
+        return GenerateArtifact(
+            spec=board.to_spec(),
+            chart_type="board",
+            reasoning=(f"{len(ctx.rows)} rows in {len(board.lanes)} lanes by "
+                       f"{board.board.group_by} — built from the rows, not generated"),
+            telemetry=telemetry,
+        )
 
 
 # ---------------------------------------------------------------------------

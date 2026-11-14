@@ -335,7 +335,7 @@ def test_every_new_type_has_enough_examples_to_be_retrieved():
     counts: dict[str, int] = {}
     for pair in seed().pairs:
         counts[pair.chart_type] = counts.get(pair.chart_type, 0) + 1
-    for chart_type in ("gantt", "burndown", "milestone_timeline", "cumulative_flow"):
+    for chart_type in ("gantt", "burndown", "milestone_timeline", "cumulative_flow", "board"):
         assert counts.get(chart_type, 0) >= 2, chart_type
 
 
@@ -371,6 +371,11 @@ ALLOC = [{"person": p, "project": j, "allocation_pct": a} for p, j, a in [
     ("Dana", "Atlas", 80), ("Eli", "Halcyon", 30), ("Eli", "Northwind", 90)]]
 
 
+DEALS = [{"deal": d, "account": a, "stage": s, "owner": o, "amount": m} for d, a, s, o, m in [
+    ("Renewal", "Northwind", "Qualified", "Asha", 48000), ("Expansion", "Halcyon", "Proposal", "Ben", 120000),
+    ("New logo", "Atlas", "Negotiation", "Chen", 86000), ("Upsell", "Cedar", "Qualified", "Asha", 22000),
+    ("Platform", "Beacon", "Won", "Dana", 150000), ("Pilot", "Ember", "Lost", "Ben", 15000)]]
+
 DELIVERY_CASES = [
     ("PORTFOLIO", PORTFOLIO, "how are our projects progressing?", "gantt"),
     ("PORTFOLIO", PORTFOLIO, "show the project timelines", "gantt"),
@@ -380,7 +385,13 @@ DELIVERY_CASES = [
     ("PIPELINE", PIPELINE, "show the project pipeline by status", "bar"),
     ("PIPELINE", PIPELINE, "how many projects are in each stage?", "bar"),
     ("PIPELINE_REGION", PIPELINE_REGION, "project pipeline status by region", "stacked_bar"),
-    ("PROJECT_LIST", PROJECT_LIST, "show projects by status", "bar"),
+    ("PROJECT_LIST", PROJECT_LIST, "how many projects are in each status?", "bar"),
+    ("PROJECT_LIST", PROJECT_LIST, "show projects by status", "board"),
+    ("PROJECT_LIST", PROJECT_LIST, "show the project pipeline as a board", "board"),
+    ("PROJECT_LIST", PROJECT_LIST, "give me the pipeline view", "board"),
+    ("DEALS", DEALS, "what deals are in each stage?", "board"),
+    ("DEALS", DEALS, "show the deals as a kanban", "board"),
+    ("PIPELINE", PIPELINE, "show the project pipeline as a board", "bar"),
     ("ALLOC", ALLOC, "who is allocated to which project?", "heatmap"),
     ("ALLOC", ALLOC, "is anyone over-allocated?", "stacked_bar"),
 ]

@@ -11,6 +11,7 @@ The class vocabulary maps onto what the frontend already special-cases:
 
 * ``.nxv-card``            — the chart/KPI/table card chrome
 * ``.nxv-kpi``             — a KPI tile, with modifiers per subtype
+* ``.nxv-board``           — a board: lanes of cards
 * ``.nxv-table``           — a rich table
 * ``.nxv-cell--*``         — the per-column renderers the corpus emits
                              (avatar_name, progress_bar, sparkline, pill,
@@ -181,6 +182,124 @@ def _components_block() -> str:
 
 .nxv-card__body.vega-embed {{ display: block; width: 100%; }}
 .nxv-card__body .vega-embed {{ display: block; width: 100%; }}
+
+/* ---- boards: records as cards in lanes ---- */
+.nxv-board {{
+  display: flex;
+  gap: calc(var(--nxv-space) * 1.5);
+  overflow-x: auto;
+  padding-bottom: var(--nxv-space);
+}}
+
+.nxv-board__lane {{
+  background: var(--nxv-surface-alt);
+  border: var(--nxv-border-width) solid var(--nxv-border);
+  border-radius: var(--nxv-radius-lg);
+  display: flex;
+  flex: 0 0 260px;
+  flex-direction: column;
+  gap: var(--nxv-space);
+  max-height: 560px;
+  padding: var(--nxv-space);
+}}
+
+.nxv-board__head {{
+  align-items: center;
+  display: flex;
+  font-weight: var(--nxv-weight-medium);
+  gap: calc(var(--nxv-space) * 0.75);
+  padding: calc(var(--nxv-space) * 0.5);
+}}
+
+.nxv-board__dot {{
+  background: var(--nxv-neutral);
+  border-radius: 3px;
+  flex: none;
+  height: 10px;
+  width: 10px;
+}}
+
+.nxv-board__dot--pass {{ background: var(--nxv-positive); }}
+.nxv-board__dot--fix {{ background: var(--nxv-warning); }}
+.nxv-board__dot--fail {{ background: var(--nxv-negative); }}
+.nxv-board__dot--muted {{ background: var(--nxv-text-muted); }}
+
+.nxv-board__key {{ flex: 1; min-width: 0; }}
+
+.nxv-board__count {{
+  border: var(--nxv-border-width) solid var(--nxv-border);
+  border-radius: 999px;
+  color: var(--nxv-text-secondary);
+  font-size: var(--nxv-size-xs);
+  font-variant-numeric: tabular-nums;
+  padding: 1px 8px;
+}}
+
+.nxv-board__cards {{
+  display: flex;
+  flex-direction: column;
+  gap: var(--nxv-space);
+  overflow-y: auto;
+}}
+
+.nxv-board__card {{
+  background: var(--nxv-surface);
+  border: var(--nxv-border-width) solid var(--nxv-border);
+  border-left: 3px solid var(--nxv-border-strong);
+  border-radius: var(--nxv-radius-md);
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--nxv-space) * 0.5);
+  padding: var(--nxv-space) calc(var(--nxv-space) * 1.25);
+}}
+
+.nxv-board__lane--pass .nxv-board__card {{ border-left-color: var(--nxv-positive); }}
+.nxv-board__lane--fix .nxv-board__card {{ border-left-color: var(--nxv-warning); }}
+.nxv-board__lane--fail .nxv-board__card {{ border-left-color: var(--nxv-negative); }}
+
+.nxv-board__title {{ font-weight: var(--nxv-weight-medium); line-height: 1.3; }}
+
+.nxv-board__subtitle {{ color: var(--nxv-text-secondary); font-size: var(--nxv-size-sm); }}
+
+.nxv-board__desc {{
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  color: var(--nxv-text-secondary);
+  display: -webkit-box;
+  font-size: var(--nxv-size-sm);
+  line-height: 1.4;
+  overflow: hidden;
+}}
+
+.nxv-board__foot {{
+  align-items: center;
+  border-top: 1px dashed var(--nxv-border);
+  display: flex;
+  flex-wrap: wrap;
+  gap: calc(var(--nxv-space) * 0.5);
+  padding-top: calc(var(--nxv-space) * 0.75);
+}}
+
+.nxv-board__tag {{
+  background: color-mix(in srgb, var(--nxv-accent) 12%, transparent);
+  border-radius: 999px;
+  color: var(--nxv-accent);
+  font-size: var(--nxv-size-xs);
+  padding: 2px 8px;
+}}
+
+.nxv-board__badge {{
+  border: var(--nxv-border-width) solid var(--nxv-border-strong);
+  border-radius: var(--nxv-radius-sm);
+  font-family: var(--nxv-font-mono);
+  font-size: var(--nxv-size-xs);
+  margin-left: auto;
+  padding: 1px 6px;
+}}
+
+.nxv-board__more {{ color: var(--nxv-text-muted); font-size: var(--nxv-size-sm); padding: 0 4px; }}
+
+.nxv-board__empty {{ color: var(--nxv-text-muted); font-size: var(--nxv-size-sm); padding: 0 4px; }}
 
 /* ---- KPI tiles ---- */
 .nxv-kpi {{

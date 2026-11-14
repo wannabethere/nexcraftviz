@@ -129,6 +129,8 @@ def is_structurally_valid(spec: Spec | dict[str, Any]) -> bool:
         return False
     if any(k in raw for k in ("mark", "layer", "hconcat", "vconcat", "facet")):
         return True
+    if isinstance(raw.get("board"), dict) and isinstance(raw.get("lanes"), list):
+        return True  # a board: the host draws lanes and cards
     columns = raw.get("columns")
     if isinstance(columns, list) and columns:
         return True
@@ -661,7 +663,7 @@ def validate(
         return spec, ValidationReport(ok=True, tier_reached=1, issues=issues)
 
     family = spec.family
-    if family in ("kpi", "table"):
+    if family in ("kpi", "table", "board"):
         return spec, ValidationReport(
             ok=True, tier_reached=1, issues=issues, skipped_tiers=[2, 3]
         )
