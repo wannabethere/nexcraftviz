@@ -348,33 +348,132 @@ def test_every_new_type_has_enough_examples_to_be_retrieved():
 # check that a pair's routing metadata says what it should, not a rule.
 
 PORTFOLIO = [
-    {"project": "Northwind ERP", "status": "Active", "start_date": "2026-03-02", "go_live_planned_date": "2026-09-14", "rag": "Green"},
-    {"project": "Halcyon CRM", "status": "Active", "start_date": "2026-05-11", "go_live_planned_date": "2026-12-07", "rag": "Amber"},
-    {"project": "Atlas Data", "status": "Pre-Sales", "start_date": "2026-11-02", "go_live_planned_date": "2027-04-19", "rag": "Green"},
-    {"project": "Beacon Portal", "status": "Completed", "start_date": "2025-10-06", "go_live_planned_date": "2026-04-13", "rag": "Green"},
-    {"project": "Cedar Mobile", "status": "Active", "start_date": "2026-06-01", "go_live_planned_date": "2026-11-30", "rag": "Red"},
+    {
+        "project": "Northwind ERP",
+        "status": "Active",
+        "start_date": "2026-03-02",
+        "go_live_planned_date": "2026-09-14",
+        "rag": "Green",
+    },
+    {
+        "project": "Halcyon CRM",
+        "status": "Active",
+        "start_date": "2026-05-11",
+        "go_live_planned_date": "2026-12-07",
+        "rag": "Amber",
+    },
+    {
+        "project": "Atlas Data",
+        "status": "Pre-Sales",
+        "start_date": "2026-11-02",
+        "go_live_planned_date": "2027-04-19",
+        "rag": "Green",
+    },
+    {
+        "project": "Beacon Portal",
+        "status": "Completed",
+        "start_date": "2025-10-06",
+        "go_live_planned_date": "2026-04-13",
+        "rag": "Green",
+    },
+    {
+        "project": "Cedar Mobile",
+        "status": "Active",
+        "start_date": "2026-06-01",
+        "go_live_planned_date": "2026-11-30",
+        "rag": "Red",
+    },
 ]
 PHASES = [
-    {"phase": "Design", "planned_start": "2026-03-02", "planned_end": "2026-04-10", "actual_start": "2026-03-02", "actual_end": "2026-04-24"},
-    {"phase": "Config", "planned_start": "2026-04-13", "planned_end": "2026-06-19", "actual_start": "2026-04-27", "actual_end": "2026-07-10"},
-    {"phase": "UAT", "planned_start": "2026-06-22", "planned_end": "2026-08-14", "actual_start": "2026-07-13", "actual_end": None},
-    {"phase": "Go-live", "planned_start": "2026-08-17", "planned_end": "2026-09-14", "actual_start": None, "actual_end": None},
+    {
+        "phase": "Design",
+        "planned_start": "2026-03-02",
+        "planned_end": "2026-04-10",
+        "actual_start": "2026-03-02",
+        "actual_end": "2026-04-24",
+    },
+    {
+        "phase": "Config",
+        "planned_start": "2026-04-13",
+        "planned_end": "2026-06-19",
+        "actual_start": "2026-04-27",
+        "actual_end": "2026-07-10",
+    },
+    {
+        "phase": "UAT",
+        "planned_start": "2026-06-22",
+        "planned_end": "2026-08-14",
+        "actual_start": "2026-07-13",
+        "actual_end": None,
+    },
+    {
+        "phase": "Go-live",
+        "planned_start": "2026-08-17",
+        "planned_end": "2026-09-14",
+        "actual_start": None,
+        "actual_end": None,
+    },
 ]
-PIPELINE = [{"status": s, "projects": n} for s, n in [("Pre-Sales", 6), ("Kickoff", 3), ("Active", 11), ("On Hold", 2), ("Completed", 9)]]
-PIPELINE_REGION = [{"status": s, "region": r, "projects": n} for s, r, n in [
-    ("Pre-Sales", "AMER", 3), ("Pre-Sales", "EMEA", 2), ("Pre-Sales", "APAC", 1), ("Active", "AMER", 5), ("Active", "EMEA", 4),
-    ("Active", "APAC", 2), ("On Hold", "EMEA", 2), ("Completed", "AMER", 4), ("Completed", "EMEA", 3), ("Completed", "APAC", 2)]]
-PROJECT_LIST = [{"project": f"P{i}", "status": s, "region": r, "budget_hours": 100 * i} for i, (s, r) in enumerate(
-    [("Active", "AMER"), ("Active", "EMEA"), ("Pre-Sales", "AMER"), ("Completed", "APAC"), ("Active", "APAC"), ("On Hold", "EMEA"), ("Pre-Sales", "EMEA")], 1)]
-ALLOC = [{"person": p, "project": j, "allocation_pct": a} for p, j, a in [
-    ("Asha", "Northwind", 60), ("Asha", "Halcyon", 40), ("Ben", "Northwind", 100), ("Chen", "Halcyon", 50), ("Chen", "Atlas", 50),
-    ("Dana", "Atlas", 80), ("Eli", "Halcyon", 30), ("Eli", "Northwind", 90)]]
+PIPELINE = [
+    {"status": s, "projects": n}
+    for s, n in [("Pre-Sales", 6), ("Kickoff", 3), ("Active", 11), ("On Hold", 2), ("Completed", 9)]
+]
+PIPELINE_REGION = [
+    {"status": s, "region": r, "projects": n}
+    for s, r, n in [
+        ("Pre-Sales", "AMER", 3),
+        ("Pre-Sales", "EMEA", 2),
+        ("Pre-Sales", "APAC", 1),
+        ("Active", "AMER", 5),
+        ("Active", "EMEA", 4),
+        ("Active", "APAC", 2),
+        ("On Hold", "EMEA", 2),
+        ("Completed", "AMER", 4),
+        ("Completed", "EMEA", 3),
+        ("Completed", "APAC", 2),
+    ]
+]
+PROJECT_LIST = [
+    {"project": f"P{i}", "status": s, "region": r, "budget_hours": 100 * i}
+    for i, (s, r) in enumerate(
+        [
+            ("Active", "AMER"),
+            ("Active", "EMEA"),
+            ("Pre-Sales", "AMER"),
+            ("Completed", "APAC"),
+            ("Active", "APAC"),
+            ("On Hold", "EMEA"),
+            ("Pre-Sales", "EMEA"),
+        ],
+        1,
+    )
+]
+ALLOC = [
+    {"person": p, "project": j, "allocation_pct": a}
+    for p, j, a in [
+        ("Asha", "Northwind", 60),
+        ("Asha", "Halcyon", 40),
+        ("Ben", "Northwind", 100),
+        ("Chen", "Halcyon", 50),
+        ("Chen", "Atlas", 50),
+        ("Dana", "Atlas", 80),
+        ("Eli", "Halcyon", 30),
+        ("Eli", "Northwind", 90),
+    ]
+]
 
 
-DEALS = [{"deal": d, "account": a, "stage": s, "owner": o, "amount": m} for d, a, s, o, m in [
-    ("Renewal", "Northwind", "Qualified", "Asha", 48000), ("Expansion", "Halcyon", "Proposal", "Ben", 120000),
-    ("New logo", "Atlas", "Negotiation", "Chen", 86000), ("Upsell", "Cedar", "Qualified", "Asha", 22000),
-    ("Platform", "Beacon", "Won", "Dana", 150000), ("Pilot", "Ember", "Lost", "Ben", 15000)]]
+DEALS = [
+    {"deal": d, "account": a, "stage": s, "owner": o, "amount": m}
+    for d, a, s, o, m in [
+        ("Renewal", "Northwind", "Qualified", "Asha", 48000),
+        ("Expansion", "Halcyon", "Proposal", "Ben", 120000),
+        ("New logo", "Atlas", "Negotiation", "Chen", 86000),
+        ("Upsell", "Cedar", "Qualified", "Asha", 22000),
+        ("Platform", "Beacon", "Won", "Dana", 150000),
+        ("Pilot", "Ember", "Lost", "Ben", 15000),
+    ]
+]
 
 DELIVERY_CASES = [
     ("PORTFOLIO", PORTFOLIO, "how are our projects progressing?", "gantt"),

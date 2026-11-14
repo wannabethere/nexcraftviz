@@ -206,7 +206,9 @@ class GeneratorAgent(SkillAgent):
         if not board.lanes:
             return GenerateArtifact(
                 status="failed",
-                reason_if_not_ok="no column in these rows has a handful of values to make lanes from",
+                reason_if_not_ok=(
+                    "no column in these rows has a handful of values to make lanes from"
+                ),
                 telemetry=telemetry,
             )
         return GenerateArtifact(

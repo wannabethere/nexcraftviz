@@ -17,8 +17,8 @@ import html as _html
 import json
 from typing import Any
 
-from nexcraftviz.spec.model import Spec
 from nexcraftviz.board.schema import BoardSpec
+from nexcraftviz.spec.model import Spec
 from nexcraftviz.table.schema import Column, KpiCard, TableSpec
 
 #: Trend-arrow glyphs. Text, not icons, so the markup stays dependency-free.

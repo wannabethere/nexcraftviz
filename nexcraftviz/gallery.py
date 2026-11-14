@@ -25,8 +25,8 @@ from nexcraftviz.data.profile import profile_rows
 from nexcraftviz.recommend.rules import recommend
 from nexcraftviz.render.html import (
     escape,
-    render_card,
     render_board,
+    render_card,
     render_chart_mount,
     render_kpi,
     render_table,

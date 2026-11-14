@@ -16,6 +16,7 @@ would read as two different pipelines.
 ``lanes`` rather than ``columns``: a top-level ``columns`` list is how a rich
 table announces itself, and a board must never be mistaken for one.
 """
+
 from __future__ import annotations
 
 import json
@@ -41,7 +42,9 @@ class BoardLayout(BaseModel):
     description_field: str = Field(default="", description="Longer text, clamped by the host.")
     tag_fields: list[str] = Field(default_factory=list, description="Shown as chips.")
     badge_field: str = Field(default="", description="One figure in the card's corner.")
-    badge_label: str = Field(default="", description="Words after the badge figure, e.g. 'assigned'.")
+    badge_label: str = Field(
+        default="", description="Words after the badge figure, e.g. 'assigned'."
+    )
     order: list[str] = Field(default_factory=list, description="Lane order; unlisted lanes follow.")
     tones: dict[str, Tone] = Field(default_factory=dict, description="Lane value → tone.")
     max_cards: int = Field(default=DEFAULT_MAX_CARDS, ge=1, le=500)

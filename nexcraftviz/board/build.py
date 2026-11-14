@@ -10,6 +10,7 @@ only break ties, the same ordering the rich table uses: a column called
 ``status`` holding 400 free-text values is not a lane, and one called ``stage``
 holding five values is.
 """
+
 from __future__ import annotations
 
 import re
@@ -24,25 +25,118 @@ from nexcraftviz.table.build import _TONE_BY_VALUE
 MAX_LANES = 12
 
 _LANE_HINTS = ("status", "stage", "state", "phase", "step", "lane", "pipeline", "column")
-_TITLE_HINTS = ("name", "title", "project", "deal", "opportunity", "task", "ticket", "subject",
-                "summary", "account", "client", "customer", "candidate", "employee", "person")
-_DESCRIPTION_HINTS = ("description", "summary", "notes", "note", "comment", "details", "scope",
-                      "objective", "purpose")
-_SUBTITLE_HINTS = ("client", "customer", "account", "owner", "assignee", "manager", "lead", "company")
-_TAG_HINTS = ("region", "segment", "type", "country", "tier", "priority", "rag", "health",
-              "category", "industry", "size", "geo", "market")
-_BADGE_HINTS = ("assigned", "team", "resources", "people", "members", "headcount", "count",
-                "hours", "value", "amount", "budget", "points", "days")
+_TITLE_HINTS = (
+    "name",
+    "title",
+    "project",
+    "deal",
+    "opportunity",
+    "task",
+    "ticket",
+    "subject",
+    "summary",
+    "account",
+    "client",
+    "customer",
+    "candidate",
+    "employee",
+    "person",
+)
+_DESCRIPTION_HINTS = (
+    "description",
+    "summary",
+    "notes",
+    "note",
+    "comment",
+    "details",
+    "scope",
+    "objective",
+    "purpose",
+)
+_SUBTITLE_HINTS = (
+    "client",
+    "customer",
+    "account",
+    "owner",
+    "assignee",
+    "manager",
+    "lead",
+    "company",
+)
+_TAG_HINTS = (
+    "region",
+    "segment",
+    "type",
+    "country",
+    "tier",
+    "priority",
+    "rag",
+    "health",
+    "category",
+    "industry",
+    "size",
+    "geo",
+    "market",
+)
+_BADGE_HINTS = (
+    "assigned",
+    "team",
+    "resources",
+    "people",
+    "members",
+    "headcount",
+    "count",
+    "hours",
+    "value",
+    "amount",
+    "budget",
+    "points",
+    "days",
+)
 
 #: Lane values in the order work usually moves through them. A lane takes the
 #: position of the first of these its name contains, so "SOW in progress" sits
 #: with the SOW stage, not with delivery. Unmatched lanes follow, largest first.
 _PIPELINE_ORDER = (
-    "backlog", "new", "open", "to do", "todo", "lead", "prospect", "pre-sales", "presales",
-    "pre sales", "estimation", "sow", "proposal", "qualified", "negotiation", "kickoff",
-    "kick-off", "planned", "planning", "not started", "ready", "in progress", "in-progress",
-    "implementation", "active", "review", "testing", "uat", "blocked", "on hold", "paused",
-    "done", "complete", "completed", "won", "closed", "lost", "cancelled", "canceled",
+    "backlog",
+    "new",
+    "open",
+    "to do",
+    "todo",
+    "lead",
+    "prospect",
+    "pre-sales",
+    "presales",
+    "pre sales",
+    "estimation",
+    "sow",
+    "proposal",
+    "qualified",
+    "negotiation",
+    "kickoff",
+    "kick-off",
+    "planned",
+    "planning",
+    "not started",
+    "ready",
+    "in progress",
+    "in-progress",
+    "implementation",
+    "active",
+    "review",
+    "testing",
+    "uat",
+    "blocked",
+    "on hold",
+    "paused",
+    "done",
+    "complete",
+    "completed",
+    "won",
+    "closed",
+    "lost",
+    "cancelled",
+    "canceled",
 )
 
 #: What the planner may call each part of a board. Channels are free text in a
@@ -105,7 +199,7 @@ def build_board(
             key=key,
             count=len(groups[key]),
             tone=layout.tones.get(key),
-            cards=[_card(row, layout) for row in groups[key][:layout.max_cards]],
+            cards=[_card(row, layout) for row in groups[key][: layout.max_cards]],
         )
         for key in keys
     ]
@@ -135,10 +229,13 @@ def choose_layout(profile: DataProfile, rows: list[dict[str, Any]], **hints: Any
 
     strings = [c for c in profile.columns if c.python_type == "str" and not _is_id(c.name)]
     group_by = take(given.get("group_by") or _pick_lane(profile))
-    title_field = take(given.get("title_field") or _pick(strings, used, _TITLE_HINTS, prefer_unique=True))
+    title_field = take(
+        given.get("title_field") or _pick(strings, used, _TITLE_HINTS, prefer_unique=True)
+    )
     description_field = take(given.get("description_field") or _pick_long_text(strings, used, rows))
-    subtitle_field = take(given.get("subtitle_field") or _pick(strings, used, _SUBTITLE_HINTS,
-                                                                require_hint=True))
+    subtitle_field = take(
+        given.get("subtitle_field") or _pick(strings, used, _SUBTITLE_HINTS, require_hint=True)
+    )
     # A field shows once on a card: a tag that is already the lane, the title
     # or the subtitle would only repeat it (seen live: the plan named
     # customer_type as both subtitle and tag).
@@ -163,6 +260,7 @@ def choose_layout(profile: DataProfile, rows: list[dict[str, Any]], **hints: Any
 # choosing fields
 # ---------------------------------------------------------------------------
 
+
 def _is_id(name: str) -> bool:
     lowered = name.lower()
     return lowered in {"id", "uuid", "guid", "url", "href"} or lowered.endswith(("_id", "_uuid"))
@@ -179,11 +277,18 @@ def _hinted(name: str, hints: tuple[str, ...]) -> int:
 
 def _pick_lane(profile: DataProfile) -> str:
     candidates = [
-        c for c in profile.columns
-        if c.python_type == "str" and not _is_id(c.name) and 2 <= c.distinct <= MAX_LANES
+        c
+        for c in profile.columns
+        if c.python_type == "str"
+        and not _is_id(c.name)
+        and 2 <= c.distinct <= MAX_LANES
         # Every value different usually means a name, not a lane -- unless the
         # column says it is a status: six projects in six statuses is a board.
-        and not (c.is_unique and profile.row_count > 2 and _hinted(c.name, _LANE_HINTS) == len(_LANE_HINTS))
+        and not (
+            c.is_unique
+            and profile.row_count > 2
+            and _hinted(c.name, _LANE_HINTS) == len(_LANE_HINTS)
+        )
     ]
     if not candidates:
         return ""
@@ -191,8 +296,14 @@ def _pick_lane(profile: DataProfile) -> str:
     return candidates[0].name
 
 
-def _pick(columns: list[ColumnProfile], used: set[str], hints: tuple[str, ...], *,
-          prefer_unique: bool = False, require_hint: bool = False) -> str:
+def _pick(
+    columns: list[ColumnProfile],
+    used: set[str],
+    hints: tuple[str, ...],
+    *,
+    prefer_unique: bool = False,
+    require_hint: bool = False,
+) -> str:
     free = [c for c in columns if c.name not in used]
     if require_hint:
         free = [c for c in free if _hinted(c.name, hints) < len(hints)]
@@ -202,7 +313,9 @@ def _pick(columns: list[ColumnProfile], used: set[str], hints: tuple[str, ...], 
     return free[0].name
 
 
-def _pick_long_text(columns: list[ColumnProfile], used: set[str], rows: list[dict[str, Any]]) -> str:
+def _pick_long_text(
+    columns: list[ColumnProfile], used: set[str], rows: list[dict[str, Any]]
+) -> str:
     best, best_len = "", 0.0
     for col in columns:
         if col.name in used:
@@ -244,6 +357,7 @@ def _badge_label(field: str) -> str:
 # ---------------------------------------------------------------------------
 # lanes and cards
 # ---------------------------------------------------------------------------
+
 
 def _ordered(keys: list[str], given: list[str], counts: dict[str, int]) -> list[str]:
     if given:

@@ -115,7 +115,9 @@ class PlanSkill(Skill[PlanIn, ChartPlan]):
 # ---------------------------------------------------------------------------
 
 #: What a model writes for "count the rows" when it names the count as a field.
-_COUNT_NAMES = frozenset({"count", "*", "n", "record_count", "row_count", "records", "number_of_records"})
+_COUNT_NAMES = frozenset(
+    {"count", "*", "n", "record_count", "row_count", "records", "number_of_records"}
+)
 
 
 def _count_needs_no_column(plan: ChartPlan, known: set[str]) -> list[str]:
