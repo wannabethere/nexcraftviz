@@ -159,3 +159,8 @@ def test_a_money_badge_reads_as_a_figure():
     rows = [{"deal": "A", "stage": "Won", "amount": 48000}, {"deal": "B", "stage": "Lost", "amount": 1500}]
     card = build_board(rows).lanes[0].cards[0]
     assert card.badge == "48,000"
+
+
+def test_a_field_shows_once_on_a_card():
+    board = build_board(PROJECTS, subtitle_field="segment", tag_fields=["region", "segment", "status"])
+    assert board.board.tag_fields == ["region"]

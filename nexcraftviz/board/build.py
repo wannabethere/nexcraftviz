@@ -139,7 +139,10 @@ def choose_layout(profile: DataProfile, rows: list[dict[str, Any]], **hints: Any
     description_field = take(given.get("description_field") or _pick_long_text(strings, used, rows))
     subtitle_field = take(given.get("subtitle_field") or _pick(strings, used, _SUBTITLE_HINTS,
                                                                 require_hint=True))
-    tags = given.get("tag_fields") or _pick_tags(strings, used)
+    # A field shows once on a card: a tag that is already the lane, the title
+    # or the subtitle would only repeat it (seen live: the plan named
+    # customer_type as both subtitle and tag).
+    tags = [t for t in (given.get("tag_fields") or _pick_tags(strings, used)) if t not in used]
     used.update(tags)
     badge_field = take(given.get("badge_field") or _pick_badge(profile, used))
 
