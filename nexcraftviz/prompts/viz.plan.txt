@@ -62,6 +62,23 @@ what you chose and why, including what you rejected.
    backwards turns every rise into a fall. To stress the latest period, set
    `emphasis` instead.
 
+### WHEN THE PLAN IS A BOARD
+
+A `board` lays the records out as cards in lanes, one lane per value of a
+status-like column — a Kanban view. Choose it when the question wants to SEE the
+records arranged by stage ("show the pipeline as a board", "what is in each
+stage", "kanban"), not to count them: a question that asks how many is a bar.
+It needs one row per record and a column with a handful of values (2–12).
+
+A board is built from the rows, not drawn, so name its parts as encodings —
+each `field` a real column:
+- `group` — the column whose values are the lanes (status, stage, phase).
+- `title` — the card heading (the record's name).
+- `description` — longer text for the card body, if there is one.
+- `tag` — one or two short categories shown as chips (region, segment, type).
+- `badge` — one number in the card's corner (people assigned, value, hours).
+Put the lane order, when it matters, in `sort` on the `group` encoding.
+
 ### STYLING
 
 Say what the colour is *doing* (`palette_intent`: sequential, diverging,

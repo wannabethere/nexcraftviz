@@ -145,7 +145,7 @@ class Spec:
 
     @property
     def family(self) -> str:
-        """``vega-lite`` | ``vega`` | ``table`` | ``kpi`` | ``unknown``.
+        """``vega-lite`` | ``vega`` | ``table`` | ``kpi`` | ``board`` | ``unknown``.
 
         Non-Vega families are first-class payloads in this stack: ``kpi`` specs
         carry a ``kpi_metadata`` block and ``table`` specs a ``columns`` array
@@ -159,6 +159,9 @@ class Spec:
             return "vega"
         if isinstance(self.raw.get("kpi_metadata"), dict):
             return "kpi"
+        # Before the table check: a board must never be read as a rich table.
+        if isinstance(self.raw.get("board"), dict) and isinstance(self.raw.get("lanes"), list):
+            return "board"
         if isinstance(self.raw.get("columns"), list) and self.raw["columns"]:
             return "table"
         if self._has_vega_lite_shape():

@@ -1,4 +1,4 @@
-"""HTML rendering for all three payload families.
+"""HTML rendering for every payload family: charts, tables, KPI cards and boards.
 
 Charts have a renderer. The other two families do not: a ``table_with_cells``
 payload reaches the frontend, fails to parse as Vega-Lite, and degrades to an
@@ -17,6 +17,7 @@ import html as _html
 import json
 from typing import Any
 
+from nexcraftviz.board.schema import BoardSpec
 from nexcraftviz.spec.model import Spec
 from nexcraftviz.table.schema import Column, KpiCard, TableSpec
 
@@ -129,6 +130,46 @@ def render_cell(column: Column, row: dict[str, Any]) -> str:
 # ---------------------------------------------------------------------------
 # KPI cards
 # ---------------------------------------------------------------------------
+
+def render_board(board: BoardSpec | Spec | dict[str, Any], *, max_cards: int = 12) -> str:
+    """Render a ``board`` payload: one lane per group, cards in each.
+
+    A lane shows ``max_cards`` cards and says how many more it holds, so a
+    lane of forty stays scannable without pretending it holds twelve.
+    """
+    if not isinstance(board, BoardSpec):
+        board = BoardSpec.from_spec(board)
+    lanes: list[str] = []
+    for lane in board.lanes:
+        tone = f" nxv-board__lane--{lane.tone}" if lane.tone else ""
+        dot = f" nxv-board__dot--{lane.tone}" if lane.tone else ""
+        cards: list[str] = []
+        for card in lane.cards[:max_cards]:
+            parts = [f'<div class="nxv-board__title">{escape(card.title or "—")}</div>']
+            if card.subtitle:
+                parts.append(f'<div class="nxv-board__subtitle">{escape(card.subtitle)}</div>')
+            if card.description:
+                parts.append(f'<div class="nxv-board__desc">{escape(card.description)}</div>')
+            foot = "".join(f'<span class="nxv-board__tag">{escape(t)}</span>' for t in card.tags)
+            if card.badge:
+                foot += f'<span class="nxv-board__badge">{escape(card.badge)}</span>'
+            if foot:
+                parts.append(f'<div class="nxv-board__foot">{foot}</div>')
+            cards.append(f'<article class="nxv-board__card">{"".join(parts)}</article>')
+        more = lane.count - min(len(lane.cards), max_cards)
+        if more > 0:
+            cards.append(f'<div class="nxv-board__more">+{more} more</div>')
+        if not cards:
+            cards.append('<div class="nxv-board__empty">None</div>')
+        lanes.append(
+            f'<section class="nxv-board__lane{tone}"><header class="nxv-board__head">'
+            f'<span class="nxv-board__dot{dot}"></span>'
+            f'<span class="nxv-board__key">{escape(lane.key)}</span>'
+            f'<span class="nxv-board__count">{lane.count}</span></header>'
+            f'<div class="nxv-board__cards">{"".join(cards)}</div></section>'
+        )
+    return f'<div class="nxv-board">{"".join(lanes)}</div>'
+
 
 def render_kpi(kpi: KpiCard | Spec | dict[str, Any]) -> str:
     """Render a ``kpi_metadata`` payload."""

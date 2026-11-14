@@ -50,12 +50,18 @@ class ChartPair:
     # payload — exactly one of these is meaningful, per family
     vega_lite_spec: str = ""
     columns_schema: Any = None
+    #: A ``board`` pair's layout — lanes and card fields. See nexcraftviz.board.
+    board_schema: Any = None
+    #: Rows that show a non-Vega pair at work, for the gallery. Vega pairs carry theirs inline.
+    example_rows: list[dict[str, Any]] = field(default_factory=list)
 
     @property
     def family(self) -> Family:
         declared = str(self.kinds.get("family") or "").strip()
         if declared:
             return declared
+        if self.board_schema:
+            return "board"
         if self.columns_schema:
             return "table-with-cells"
         if self.vega_lite_spec.strip() not in ("", "{}"):
@@ -155,6 +161,8 @@ def load(path: str | Path | None = None) -> Corpus:
                 example_questions=_str_list(entry.get("example_questions")),
                 vega_lite_spec=str(entry.get("vega_lite_spec") or ""),
                 columns_schema=entry.get("columns_schema"),
+                board_schema=entry.get("board_schema"),
+                example_rows=[r for r in (entry.get("example_rows") or []) if isinstance(r, dict)],
             )
         )
 

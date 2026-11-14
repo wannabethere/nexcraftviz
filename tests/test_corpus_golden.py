@@ -44,15 +44,18 @@ def test_corpus_loads() -> None:
 def test_corpus_families_partition_cleanly() -> None:
     """Every pair belongs to exactly one renderer family."""
     families = {p.family for p in CORPUS}
-    assert families == {"vega-lite", "table-with-cells", "kpi-card"}
+    assert families == {"vega-lite", "table-with-cells", "kpi-card", "board"}
 
     # Only vega-lite pairs carry a real spec; the others are rendered by
-    # dedicated frontend components and legitimately have none.
+    # dedicated frontend components and legitimately have none. A board pair
+    # carries a layout and the rows that show it, and nothing else.
     for pair in CORPUS:
         if pair.family == "vega-lite":
             assert pair.has_vega_spec, f"{pair.name} claims vega-lite but has no spec"
         else:
             assert not pair.has_vega_spec, f"{pair.name} is {pair.family} but ships a spec"
+        if pair.family == "board":
+            assert pair.board_schema and pair.example_rows, f"{pair.name} needs a layout and rows"
 
 
 @pytest.mark.parametrize("pair", VEGA_PAIRS, ids=lambda p: p.name)

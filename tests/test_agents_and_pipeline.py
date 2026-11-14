@@ -802,3 +802,45 @@ def test_a_comma_list_with_an_invented_column_still_fails():
     result = skill.apply(skill.coerce_input({"question": "NPS by quarter", "rows": rows}),
                          skill.parse(answer))
     assert result.failed and "quarter,region" in result.failed[0][1]
+
+
+def test_a_count_named_as_a_field_counts_rows():
+    """Found live: "show projects by status" over one row per project planned
+    `x = count(field="count")`, and failed as naming a column that is not there."""
+    from nexcraftviz.skills import REGISTRY
+
+    skill = REGISTRY["viz.plan"]
+    rows = [{"project": "A", "status": "Active"}, {"project": "B", "status": "Active"},
+            {"project": "C", "status": "On hold"}]
+    answer = {
+        "status": "ok", "confidence": 0.8, "chart_type": "bar", "alternatives": [],
+        "rationale": "", "transforms": [], "styling": {}, "metadata": {}, "follow_ups": [],
+        "encodings": [
+            {"channel": "y", "field": "status", "aggregate": "", "sort": "", "why": ""},
+            {"channel": "x", "field": "count", "aggregate": "count", "sort": "", "why": ""},
+        ],
+    }
+    result = skill.apply(skill.coerce_input({"question": "Show projects by status", "rows": rows}),
+                         skill.parse(answer))
+    assert not result.failed, result.failed
+    x = [e for e in result.value.encodings if e.channel == "x"][0]
+    assert (x.field, x.aggregate) == ("", "count")
+
+
+def test_a_real_count_column_is_left_alone():
+    from nexcraftviz.skills import REGISTRY
+
+    skill = REGISTRY["viz.plan"]
+    rows = [{"status": "Active", "count": 11}, {"status": "On hold", "count": 2}]
+    answer = {
+        "status": "ok", "confidence": 0.8, "chart_type": "bar", "alternatives": [],
+        "rationale": "", "transforms": [], "styling": {}, "metadata": {}, "follow_ups": [],
+        "encodings": [
+            {"channel": "x", "field": "status", "aggregate": "", "sort": "", "why": ""},
+            {"channel": "y", "field": "count", "aggregate": "sum", "sort": "", "why": ""},
+        ],
+    }
+    result = skill.apply(skill.coerce_input({"question": "projects by status", "rows": rows}),
+                         skill.parse(answer))
+    y = [e for e in result.value.encodings if e.channel == "y"][0]
+    assert (y.field, y.aggregate) == ("count", "sum")

@@ -24804,3 +24804,1105 @@ pairs:
     - "Show the hiring pipeline over time"
     - "Is the recruitment pipeline flowing?"
 
+
+# --- project delivery and resourcing -------------------------------------------
+
+- name: gantt_project_portfolio_schedule
+  chart_type: gantt
+  business_goal: "See every project's span on one calendar: what is running now, what starts next, and which go-lives bunch together."
+  overview: "One bar per project from its start to its planned go-live, coloured by status, earliest start at the top."
+  insight: "Read the right-hand ends. Go-lives that land in the same few weeks compete for the same people at the worst moment; a bar coloured at-risk that also ends soonest is the one to look at first."
+  purpose: "Gantt of a project portfolio — one bar per project across its start and go-live dates."
+  goal: "Show project progress and timing across the portfolio."
+  use_when:
+    - "Question uses 'timelines', 'timeline', 'roadmap', 'portfolio', 'go-live', 'progressing', 'progress'"
+    - "Each row is a project with a start AND an end (or go-live) date"
+    - "Between 3 and 30 projects"
+  do_not_use_when:
+    - "Each row carries a baseline and an outturn for the same item → gantt"
+    - "Rows are single dates, not ranges → milestone_timeline"
+    - "Only a count per status matters, not dates → bar"
+  kinds:
+    intent: progress
+    shape: date-range-categorical
+    family: vega-lite
+  data_shape:
+    columns:
+      - {"name": "project", "type": "string"}
+      - {"name": "start", "type": "date"}
+      - {"name": "end", "type": "date"}
+      - {"name": "status", "type": "string", "required": false}
+  vega_lite_spec: |-
+    {
+      "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+      "width": 520,
+      "height": 220,
+      "background": "transparent",
+      "data": {
+        "values": [
+          {
+            "project": "Northwind ERP",
+            "start": "2026-03-02",
+            "end": "2026-09-14",
+            "status": "Active"
+          },
+          {
+            "project": "Halcyon CRM",
+            "start": "2026-05-11",
+            "end": "2026-12-07",
+            "status": "Active"
+          },
+          {
+            "project": "Cedar Mobile",
+            "start": "2026-06-01",
+            "end": "2026-11-30",
+            "status": "At risk"
+          },
+          {
+            "project": "Atlas Data",
+            "start": "2026-11-02",
+            "end": "2027-04-19",
+            "status": "Pre-sales"
+          },
+          {
+            "project": "Beacon Portal",
+            "start": "2025-10-06",
+            "end": "2026-04-13",
+            "status": "Completed"
+          }
+        ]
+      },
+      "mark": {
+        "type": "bar",
+        "cornerRadius": 3,
+        "height": {
+          "band": 0.6
+        }
+      },
+      "encoding": {
+        "y": {
+          "field": "project",
+          "type": "nominal",
+          "sort": {
+            "field": "start",
+            "op": "min"
+          },
+          "title": null
+        },
+        "x": {
+          "field": "start",
+          "type": "temporal",
+          "title": null
+        },
+        "x2": {
+          "field": "end"
+        },
+        "color": {
+          "field": "status",
+          "type": "nominal",
+          "title": "Status"
+        },
+        "tooltip": [
+          {
+            "field": "project",
+            "type": "nominal"
+          },
+          {
+            "field": "status",
+            "type": "nominal"
+          },
+          {
+            "field": "start",
+            "type": "temporal",
+            "title": "Start"
+          },
+          {
+            "field": "end",
+            "type": "temporal",
+            "title": "Go-live"
+          }
+        ]
+      }
+    }
+  example_questions:
+    - "How are our projects progressing?"
+    - "Show the project timelines"
+    - "When do the active projects go live?"
+    - "Which go-lives fall in the same month?"
+
+- name: gantt_project_phases_planned_vs_actual
+  chart_type: gantt
+  business_goal: "Tell whether a project is on schedule and, if not, which phase the slip came from."
+  overview: "Each phase twice on one calendar: a pale bar for the plan and a solid bar inside it for what actually happened."
+  insight: "Watch where the solid bar first overhangs the pale one. Every later phase inherits that slip, so the first overhang — not the longest — is the cause; a phase with no solid bar has not started."
+  purpose: "Gantt with a baseline — planned and actual ranges per phase, overlaid."
+  goal: "Show planned vs actual schedule by phase."
+  use_when:
+    - "Question uses 'on schedule', 'on track', 'slipping', 'late', 'planned vs actual', 'baseline', 'behind plan'"
+    - "Each row has a planned start/end and an actual start/end"
+    - "Up to about 15 phases or tasks"
+  do_not_use_when:
+    - "Only one set of dates per row → gantt (plain schedule)"
+    - "Rows are single checkpoints rather than spans → milestone_timeline"
+    - "Only percentage complete is known → bullet"
+  kinds:
+    intent: progress
+    shape: date-range-categorical
+    family: vega-lite
+  data_shape:
+    columns:
+      - {"name": "phase", "type": "string", "ordered": true}
+      - {"name": "planned_start", "type": "date"}
+      - {"name": "planned_end", "type": "date"}
+      - {"name": "actual_start", "type": "date", "required": false}
+      - {"name": "actual_end", "type": "date", "required": false}
+  vega_lite_spec: |-
+    {
+      "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+      "width": 520,
+      "height": 200,
+      "background": "transparent",
+      "data": {
+        "values": [
+          {
+            "phase": "Design",
+            "planned_start": "2026-03-02",
+            "planned_end": "2026-04-10",
+            "actual_start": "2026-03-02",
+            "actual_end": "2026-04-24"
+          },
+          {
+            "phase": "Configure",
+            "planned_start": "2026-04-13",
+            "planned_end": "2026-06-19",
+            "actual_start": "2026-04-27",
+            "actual_end": "2026-07-10"
+          },
+          {
+            "phase": "Test",
+            "planned_start": "2026-06-22",
+            "planned_end": "2026-08-14",
+            "actual_start": "2026-07-13",
+            "actual_end": "2026-08-28"
+          },
+          {
+            "phase": "Go-live",
+            "planned_start": "2026-08-17",
+            "planned_end": "2026-09-14",
+            "actual_start": null,
+            "actual_end": null
+          }
+        ]
+      },
+      "encoding": {
+        "y": {
+          "field": "phase",
+          "type": "nominal",
+          "sort": null,
+          "title": null
+        }
+      },
+      "layer": [
+        {
+          "mark": {
+            "type": "bar",
+            "cornerRadius": 3,
+            "height": {
+              "band": 0.7
+            },
+            "color": "#c9cfdb",
+            "opacity": 0.8
+          },
+          "encoding": {
+            "x": {
+              "field": "planned_start",
+              "type": "temporal",
+              "title": null
+            },
+            "x2": {
+              "field": "planned_end"
+            },
+            "tooltip": [
+              {
+                "field": "phase",
+                "type": "nominal"
+              },
+              {
+                "field": "planned_start",
+                "type": "temporal",
+                "title": "Planned start"
+              },
+              {
+                "field": "planned_end",
+                "type": "temporal",
+                "title": "Planned end"
+              }
+            ]
+          }
+        },
+        {
+          "transform": [
+            {
+              "filter": "isValid(datum.actual_start) && isValid(datum.actual_end)"
+            }
+          ],
+          "mark": {
+            "type": "bar",
+            "cornerRadius": 2,
+            "height": {
+              "band": 0.32
+            },
+            "color": "#4f6bed"
+          },
+          "encoding": {
+            "x": {
+              "field": "actual_start",
+              "type": "temporal"
+            },
+            "x2": {
+              "field": "actual_end"
+            },
+            "tooltip": [
+              {
+                "field": "phase",
+                "type": "nominal"
+              },
+              {
+                "field": "actual_start",
+                "type": "temporal",
+                "title": "Actual start"
+              },
+              {
+                "field": "actual_end",
+                "type": "temporal",
+                "title": "Actual end"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  example_questions:
+    - "Is the project on schedule?"
+    - "Show planned vs actual dates for each phase"
+    - "Which phase made us late?"
+    - "Are we behind plan?"
+
+- name: bar_project_pipeline_by_status
+  chart_type: bar
+  business_goal: "See how many projects sit at each status of the delivery pipeline, in the order work moves through it."
+  overview: "One bar per status, in pipeline order rather than by size, labelled with its count."
+  insight: "Statuses are places work waits, not a funnel it leaks from — read the bar that is out of proportion. A swollen on-hold or pre-sales bar is a queue forming upstream of delivery."
+  purpose: "Ordered bar of record counts per pipeline status."
+  goal: "Show the project pipeline by status."
+  use_when:
+    - "Question uses 'pipeline', 'by status', 'each stage', 'status view'"
+    - "One row per status with a count, statuses in pipeline order"
+    - "Items sit in a status; they do not convert from one stage to the next"
+  do_not_use_when:
+    - "Items drop out stage to stage and conversion matters → funnel"
+    - "Status is split by a second dimension (region, owner) → stacked_bar"
+    - "Rows are dated spans per project → gantt"
+  kinds:
+    intent: flow
+    shape: categorical-few
+    family: vega-lite
+  data_shape:
+    columns:
+      - {"name": "status", "type": "string", "ordered": true}
+      - {"name": "projects", "type": "number"}
+  vega_lite_spec: |-
+    {
+      "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+      "width": 460,
+      "height": 220,
+      "background": "transparent",
+      "data": {
+        "values": [
+          {
+            "status": "Pre-sales",
+            "projects": 6
+          },
+          {
+            "status": "Kickoff",
+            "projects": 3
+          },
+          {
+            "status": "Active",
+            "projects": 11
+          },
+          {
+            "status": "On hold",
+            "projects": 2
+          },
+          {
+            "status": "Completed",
+            "projects": 9
+          }
+        ]
+      },
+      "encoding": {
+        "x": {
+          "field": "status",
+          "type": "nominal",
+          "sort": null,
+          "title": null,
+          "axis": {
+            "labelAngle": 0
+          }
+        },
+        "y": {
+          "field": "projects",
+          "type": "quantitative",
+          "title": "Projects"
+        }
+      },
+      "layer": [
+        {
+          "mark": {
+            "type": "bar",
+            "cornerRadiusEnd": 3
+          },
+          "encoding": {
+            "color": {
+              "field": "status",
+              "type": "nominal",
+              "sort": null,
+              "legend": null
+            },
+            "tooltip": [
+              {
+                "field": "status",
+                "type": "nominal"
+              },
+              {
+                "field": "projects",
+                "type": "quantitative"
+              }
+            ]
+          }
+        },
+        {
+          "mark": {
+            "type": "text",
+            "dy": -6,
+            "baseline": "bottom"
+          },
+          "encoding": {
+            "text": {
+              "field": "projects",
+              "type": "quantitative"
+            }
+          }
+        }
+      ]
+    }
+  example_questions:
+    - "Show the project pipeline by status"
+    - "How many projects are in each stage?"
+    - "Give me the project pipeline status view"
+    - "Where is the pipeline building up?"
+
+- name: bar_projects_counted_by_status
+  chart_type: bar
+  business_goal: "Turn a list of projects into the count at each status without querying again."
+  overview: "The rows are individual projects; the chart counts them per status and ranks the statuses."
+  insight: "The count is only as current as the statuses are. A status nobody has updated in weeks will read as a stable pipeline; check the largest bar against what the delivery leads say."
+  purpose: "Counted bar — aggregate entity rows by a categorical status."
+  goal: "Show how many records fall in each status."
+  use_when:
+    - "Rows are individual records (one project, ticket or deal per row) with a status column"
+    - "Question uses 'how many', 'number of', 'count'"
+    - "No count column — the chart must count rows"
+  do_not_use_when:
+    - "The rows already carry a count per status → bar (pipeline by status)"
+    - "The question wants to see the records arranged by status, not counted → board"
+  kinds:
+    intent: part-of-whole
+    shape: categorical-few
+    family: vega-lite
+  data_shape:
+    columns:
+      - {"name": "project", "type": "string"}
+      - {"name": "status", "type": "string"}
+  vega_lite_spec: |-
+    {
+      "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+      "width": 460,
+      "height": 200,
+      "background": "transparent",
+      "data": {
+        "values": [
+          {
+            "project": "Northwind ERP",
+            "status": "Active"
+          },
+          {
+            "project": "Halcyon CRM",
+            "status": "Active"
+          },
+          {
+            "project": "Cedar Mobile",
+            "status": "Active"
+          },
+          {
+            "project": "Atlas Data",
+            "status": "Pre-sales"
+          },
+          {
+            "project": "Delta BI",
+            "status": "Pre-sales"
+          },
+          {
+            "project": "Ember Ops",
+            "status": "On hold"
+          },
+          {
+            "project": "Beacon Portal",
+            "status": "Completed"
+          },
+          {
+            "project": "Fjord HR",
+            "status": "Completed"
+          }
+        ]
+      },
+      "mark": {
+        "type": "bar",
+        "cornerRadiusEnd": 3
+      },
+      "encoding": {
+        "y": {
+          "field": "status",
+          "type": "nominal",
+          "sort": "-x",
+          "title": null
+        },
+        "x": {
+          "aggregate": "count",
+          "type": "quantitative",
+          "title": "Projects"
+        },
+        "color": {
+          "field": "status",
+          "type": "nominal",
+          "legend": null
+        },
+        "tooltip": [
+          {
+            "field": "status",
+            "type": "nominal"
+          },
+          {
+            "aggregate": "count",
+            "type": "quantitative",
+            "title": "Projects"
+          }
+        ]
+      }
+    }
+  example_questions:
+    - "How many projects are in each status?"
+    - "How many of these are in each stage?"
+    - "Count the projects by status"
+
+- name: heatmap_resource_allocation
+  chart_type: heatmap
+  business_goal: "See who is allocated to which project, and how heavily, on one grid."
+  overview: "People down the side, projects across the top, each cell shaded and labelled with the allocation percentage."
+  insight: "Read across a row to see one person spread thin, and down a column to see a project resting on one person. An empty column beside a full one is where to move people from."
+  purpose: "Allocation matrix — person × project, shaded by allocation percentage."
+  goal: "Show resource-to-project allocation."
+  use_when:
+    - "Question uses 'allocation', 'staffing', 'staffed', 'assignments'"
+    - "Rows are person × project pairs with an allocation or hours measure"
+    - "Up to about 25 people and 15 projects"
+  do_not_use_when:
+    - "Question asks who is over capacity or overbooked → stacked_bar"
+    - "Allocations change week by week and the trend matters → multi_line"
+  kinds:
+    intent: comparison
+    shape: matrix
+    family: vega-lite
+  data_shape:
+    columns:
+      - {"name": "person", "type": "string"}
+      - {"name": "project", "type": "string"}
+      - {"name": "allocation_pct", "type": "number"}
+  vega_lite_spec: |-
+    {
+      "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+      "width": 420,
+      "height": 220,
+      "background": "transparent",
+      "data": {
+        "values": [
+          {
+            "person": "Asha Rao",
+            "project": "Northwind ERP",
+            "allocation_pct": 60
+          },
+          {
+            "person": "Asha Rao",
+            "project": "Halcyon CRM",
+            "allocation_pct": 40
+          },
+          {
+            "person": "Ben Ortiz",
+            "project": "Northwind ERP",
+            "allocation_pct": 100
+          },
+          {
+            "person": "Chen Wei",
+            "project": "Halcyon CRM",
+            "allocation_pct": 50
+          },
+          {
+            "person": "Chen Wei",
+            "project": "Atlas Data",
+            "allocation_pct": 50
+          },
+          {
+            "person": "Dana Kim",
+            "project": "Atlas Data",
+            "allocation_pct": 80
+          },
+          {
+            "person": "Eli Moss",
+            "project": "Halcyon CRM",
+            "allocation_pct": 30
+          },
+          {
+            "person": "Eli Moss",
+            "project": "Northwind ERP",
+            "allocation_pct": 90
+          }
+        ]
+      },
+      "encoding": {
+        "y": {
+          "field": "person",
+          "type": "nominal",
+          "title": null
+        },
+        "x": {
+          "field": "project",
+          "type": "nominal",
+          "title": null,
+          "axis": {
+            "orient": "top",
+            "labelAngle": 0
+          }
+        }
+      },
+      "layer": [
+        {
+          "mark": {
+            "type": "rect",
+            "cornerRadius": 2
+          },
+          "encoding": {
+            "color": {
+              "field": "allocation_pct",
+              "type": "quantitative",
+              "title": "Allocation %",
+              "scale": {
+                "domain": [
+                  0,
+                  100
+                ],
+                "scheme": "blues"
+              }
+            },
+            "tooltip": [
+              {
+                "field": "person",
+                "type": "nominal"
+              },
+              {
+                "field": "project",
+                "type": "nominal"
+              },
+              {
+                "field": "allocation_pct",
+                "type": "quantitative",
+                "title": "Allocation %"
+              }
+            ]
+          }
+        },
+        {
+          "mark": {
+            "type": "text",
+            "fontSize": 11
+          },
+          "encoding": {
+            "text": {
+              "field": "allocation_pct",
+              "type": "quantitative"
+            },
+            "color": {
+              "condition": {
+                "test": "datum.allocation_pct >= 60",
+                "value": "white"
+              },
+              "value": "#26212b"
+            }
+          }
+        }
+      ]
+    }
+  example_questions:
+    - "Who is allocated to which project?"
+    - "Show the resource allocation"
+    - "How is the team staffed across projects?"
+
+- name: stacked_bar_resource_load_vs_capacity
+  chart_type: stacked_bar
+  business_goal: "Find the people booked beyond their capacity, and see which projects put them there."
+  overview: "One bar per person, stacked by project, against a line at full capacity."
+  insight: "Anything past the line is a promise that cannot be kept; the segment that would bring the bar back is the conversation to have. Bars well short of the line are the people to staff from."
+  purpose: "Stacked load bar with a capacity reference line."
+  goal: "Show load vs capacity per person."
+  use_when:
+    - "Question uses 'overallocated', 'overbooked', 'capacity', 'utilisation', 'utilization', 'bandwidth'"
+    - "Rows are person × project with an allocation or hours measure"
+    - "There is a capacity to compare against (100% or weekly hours)"
+  do_not_use_when:
+    - "The question is who works on what, not how much → heatmap"
+    - "One measure per person with no split → bullet"
+  kinds:
+    intent: target-vs-actual
+    shape: categorical-many
+    family: vega-lite
+  data_shape:
+    columns:
+      - {"name": "person", "type": "string"}
+      - {"name": "project", "type": "string"}
+      - {"name": "allocation_pct", "type": "number"}
+  vega_lite_spec: |-
+    {
+      "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+      "width": 480,
+      "height": 220,
+      "background": "transparent",
+      "data": {
+        "values": [
+          {
+            "person": "Asha Rao",
+            "project": "Northwind ERP",
+            "allocation_pct": 60
+          },
+          {
+            "person": "Asha Rao",
+            "project": "Halcyon CRM",
+            "allocation_pct": 40
+          },
+          {
+            "person": "Ben Ortiz",
+            "project": "Northwind ERP",
+            "allocation_pct": 100
+          },
+          {
+            "person": "Chen Wei",
+            "project": "Halcyon CRM",
+            "allocation_pct": 50
+          },
+          {
+            "person": "Chen Wei",
+            "project": "Atlas Data",
+            "allocation_pct": 50
+          },
+          {
+            "person": "Dana Kim",
+            "project": "Atlas Data",
+            "allocation_pct": 80
+          },
+          {
+            "person": "Eli Moss",
+            "project": "Halcyon CRM",
+            "allocation_pct": 30
+          },
+          {
+            "person": "Eli Moss",
+            "project": "Northwind ERP",
+            "allocation_pct": 90
+          }
+        ]
+      },
+      "layer": [
+        {
+          "mark": {
+            "type": "bar",
+            "cornerRadiusEnd": 2
+          },
+          "encoding": {
+            "y": {
+              "field": "person",
+              "type": "nominal",
+              "sort": "-x",
+              "title": null
+            },
+            "x": {
+              "aggregate": "sum",
+              "field": "allocation_pct",
+              "type": "quantitative",
+              "title": "Allocation %"
+            },
+            "color": {
+              "field": "project",
+              "type": "nominal",
+              "title": "Project"
+            },
+            "tooltip": [
+              {
+                "field": "person",
+                "type": "nominal"
+              },
+              {
+                "field": "project",
+                "type": "nominal"
+              },
+              {
+                "field": "allocation_pct",
+                "type": "quantitative",
+                "title": "Allocation %"
+              }
+            ]
+          }
+        },
+        {
+          "mark": {
+            "type": "rule",
+            "strokeDash": [
+              4,
+              3
+            ],
+            "color": "#c53030"
+          },
+          "encoding": {
+            "x": {
+              "datum": 100
+            }
+          }
+        }
+      ]
+    }
+  example_questions:
+    - "Is anyone over-allocated?"
+    - "Who is over capacity?"
+    - "Show each person's load against capacity"
+
+- name: stacked_bar_project_pipeline_by_region
+  chart_type: stacked_bar
+  business_goal: "See the delivery pipeline status by status, and which region each stage's work belongs to."
+  overview: "One bar per status in pipeline order, stacked by region, with the total on top."
+  insight: "Compare a region's share of each stage with its share of the whole. A region heavy in pre-sales but thin in active work is about to need people it does not yet have."
+  purpose: "Ordered stacked bar — pipeline status split by a second dimension."
+  goal: "Show the project pipeline by status and region."
+  use_when:
+    - "Question uses 'pipeline', 'by region', 'status by', 'per region'"
+    - "Rows are status × a second dimension (region, owner, client) with a count"
+    - "Statuses in pipeline order, fewer than about 8 segments per bar"
+  do_not_use_when:
+    - "No second dimension → bar"
+    - "Many segments per bar → heatmap"
+  kinds:
+    intent: part-of-whole
+    shape: categorical-few
+    family: vega-lite
+  data_shape:
+    columns:
+      - {"name": "status", "type": "string", "ordered": true}
+      - {"name": "region", "type": "string"}
+      - {"name": "projects", "type": "number"}
+  vega_lite_spec: |-
+    {
+      "": "https://vega.github.io/schema/vega-lite/v5.json",
+      "width": 460,
+      "height": 220,
+      "background": "transparent",
+      "data": {
+        "values": [
+          {
+            "status": "Pre-sales",
+            "region": "Americas",
+            "projects": 3
+          },
+          {
+            "status": "Pre-sales",
+            "region": "EMEA",
+            "projects": 2
+          },
+          {
+            "status": "Pre-sales",
+            "region": "APAC",
+            "projects": 1
+          },
+          {
+            "status": "Active",
+            "region": "Americas",
+            "projects": 5
+          },
+          {
+            "status": "Active",
+            "region": "EMEA",
+            "projects": 4
+          },
+          {
+            "status": "Active",
+            "region": "APAC",
+            "projects": 2
+          },
+          {
+            "status": "On hold",
+            "region": "EMEA",
+            "projects": 2
+          },
+          {
+            "status": "Completed",
+            "region": "Americas",
+            "projects": 4
+          },
+          {
+            "status": "Completed",
+            "region": "EMEA",
+            "projects": 3
+          },
+          {
+            "status": "Completed",
+            "region": "APAC",
+            "projects": 2
+          }
+        ]
+      },
+      "mark": {
+        "type": "bar",
+        "cornerRadiusEnd": 2
+      },
+      "encoding": {
+        "x": {
+          "field": "status",
+          "type": "nominal",
+          "sort": null,
+          "title": null,
+          "axis": {
+            "labelAngle": 0
+          }
+        },
+        "y": {
+          "aggregate": "sum",
+          "field": "projects",
+          "type": "quantitative",
+          "title": "Projects"
+        },
+        "color": {
+          "field": "region",
+          "type": "nominal",
+          "title": "Region"
+        },
+        "tooltip": [
+          {
+            "field": "status",
+            "type": "nominal"
+          },
+          {
+            "field": "region",
+            "type": "nominal"
+          },
+          {
+            "field": "projects",
+            "type": "quantitative"
+          }
+        ]
+      }
+    }
+  example_questions:
+    - "Show the project pipeline status by region"
+    - "Which regions have the most projects in each stage?"
+    - "Break the pipeline down by region"
+
+# --- boards: records as cards in status lanes ---------------------------------
+
+- name: board_project_pipeline
+  chart_type: board
+  business_goal: "See every project where it sits in the delivery pipeline, and what each one is, in one view."
+  overview: "One lane per status in pipeline order, each project a card with its summary, region and segment, and how many people are assigned."
+  insight: "Read the lanes left to right and look for the one out of proportion — a crowded pre-sales or SOW lane is delivery work about to land; a card with nobody assigned in an active lane is a project no one is running."
+  purpose: "Board — projects as cards in status lanes."
+  goal: "Show the project pipeline as a board."
+  use_when:
+    - "Question uses 'board', 'kanban', 'pipeline view', 'status view', 'by status', 'each stage', 'as cards'"
+    - "One row per project with a status column of a handful of values"
+    - "The reader wants to see the projects themselves, not only how many"
+  do_not_use_when:
+    - "Question asks how many, or a count per status → bar"
+    - "Rows are already one count per status → bar"
+    - "Projects have start and end dates and timing matters → gantt"
+  kinds:
+    intent: progress
+    shape: categorical-many
+    family: board
+  data_shape:
+    columns:
+      - {"name": "project", "type": "string"}
+      - {"name": "description", "type": "string", "required": false}
+      - {"name": "status", "type": "string"}
+      - {"name": "region", "type": "string", "required": false}
+      - {"name": "segment", "type": "string", "required": false}
+      - {"name": "assigned", "type": "number", "required": false}
+  board_schema: |-
+    {
+      "group_by": "status",
+      "title_field": "project",
+      "description_field": "description",
+      "tag_fields": [
+        "region",
+        "segment"
+      ],
+      "badge_field": "assigned",
+      "badge_label": "assigned",
+      "order": [
+        "Pre-sales estimation",
+        "SOW in progress",
+        "In progress - Implementation",
+        "Active",
+        "On hold",
+        "Completed",
+        "Closed"
+      ],
+      "tones": {
+        "Active": "pass",
+        "Completed": "muted",
+        "On hold": "fix"
+      }
+    }
+  example_rows:
+    - {"project": "Fully-configurable extranet", "description": "Unit administration rollout across the regional offices, phase two.", "status": "Active", "region": "Lesotho", "segment": "Gov", "assigned": 2}
+    - {"project": "Virtual regional time-frame", "description": "Education information portal; scope agreed, build under way.", "status": "Active", "region": "Guam", "segment": "SMB", "assigned": 2}
+    - {"project": "Liberty Group", "description": "Migrate from the legacy learning platform.", "status": "In progress - Implementation", "region": "AMER", "segment": "SMB", "assigned": 3}
+    - {"project": "Streamlined empowering paradigm", "description": "Member onboarding redesign, delivered and signed off.", "status": "Completed", "region": "Guinea-Bissau", "segment": "SMB", "assigned": 2}
+    - {"project": "Cloned client-driven solution", "description": "Speech analytics pilot handed over to support.", "status": "Completed", "region": "Turkmenistan", "segment": "Enterprise", "assigned": 2}
+    - {"project": "Atlas data platform", "description": "Estimating integration effort with the client architects.", "status": "Pre-sales estimation", "region": "EMEA", "segment": "Enterprise", "assigned": 1}
+    - {"project": "Cedar mobile", "description": "Statement of work with procurement for review.", "status": "SOW in progress", "region": "APAC", "segment": "SMB", "assigned": 1}
+    - {"project": "Ember operations", "description": "Paused at the client's request until budget is confirmed.", "status": "On hold", "region": "EMEA", "segment": "Gov", "assigned": 0}
+  example_questions:
+    - "Show the project pipeline as a board"
+    - "Show me projects by status"
+    - "Give me the pipeline view"
+    - "What is in each stage of the delivery pipeline?"
+
+- name: board_deal_pipeline
+  chart_type: board
+  business_goal: "See the open deals in each sales stage, with who owns them and what they are worth."
+  overview: "One lane per stage, each deal a card with its account and owner, and its amount in the corner."
+  insight: "A lane heavy with high amounts close to the end is next quarter's number; a stage where deals sit with the same owner is where one person is the bottleneck."
+  purpose: "Board — deals as cards in sales-stage lanes."
+  goal: "Show deals by stage as a board."
+  use_when:
+    - "Question uses 'kanban', 'board', 'deal board', 'stage view', 'by stage'"
+    - "One row per deal or opportunity with a stage column"
+    - "The reader wants the deals themselves, not the conversion"
+  do_not_use_when:
+    - "Question asks about conversion or drop-off between stages → funnel"
+    - "Question asks for totals per stage → bar"
+  kinds:
+    intent: progress
+    shape: categorical-many
+    family: board
+  data_shape:
+    columns:
+      - {"name": "deal", "type": "string"}
+      - {"name": "account", "type": "string", "required": false}
+      - {"name": "stage", "type": "string"}
+      - {"name": "owner", "type": "string", "required": false}
+      - {"name": "amount", "type": "number", "required": false}
+  board_schema: |-
+    {
+      "group_by": "stage",
+      "title_field": "deal",
+      "subtitle_field": "account",
+      "tag_fields": [
+        "owner"
+      ],
+      "badge_field": "amount",
+      "order": [
+        "Qualified",
+        "Proposal",
+        "Negotiation",
+        "Won",
+        "Lost"
+      ],
+      "tones": {
+        "Won": "pass",
+        "Lost": "fail"
+      }
+    }
+  example_rows:
+    - {"deal": "Northwind renewal", "account": "Northwind", "stage": "Qualified", "owner": "Asha Rao", "amount": 48000}
+    - {"deal": "Halcyon expansion", "account": "Halcyon", "stage": "Proposal", "owner": "Ben Ortiz", "amount": 120000}
+    - {"deal": "Atlas new logo", "account": "Atlas", "stage": "Negotiation", "owner": "Chen Wei", "amount": 86000}
+    - {"deal": "Cedar upsell", "account": "Cedar", "stage": "Qualified", "owner": "Asha Rao", "amount": 22000}
+    - {"deal": "Beacon platform", "account": "Beacon", "stage": "Won", "owner": "Dana Kim", "amount": 150000}
+    - {"deal": "Ember pilot", "account": "Ember", "stage": "Lost", "owner": "Ben Ortiz", "amount": 15000}
+  example_questions:
+    - "Show the deals as a kanban board"
+    - "What deals are in each stage?"
+    - "Show the sales pipeline by stage as cards"
+
+- name: board_task_status
+  chart_type: board
+  business_goal: "See the work in flight: what is waiting, moving, stuck and done, and who has it."
+  overview: "One lane per task status, each task a card with its assignee and priority, and its size in points."
+  insight: "The blocked lane is the one to read first; then the in-progress lane — more cards there than people means work started and parked."
+  purpose: "Board — tasks as cards in status lanes."
+  goal: "Show tasks by status as a board."
+  use_when:
+    - "Question uses 'kanban', 'board', 'task board', 'what is blocked', 'in flight', 'sprint board'"
+    - "One row per task or ticket with a status column"
+    - "Fewer than about 150 records"
+  do_not_use_when:
+    - "Question asks how work is trending over days → cumulative_flow"
+    - "Question asks how much is left against time → burndown"
+  kinds:
+    intent: progress
+    shape: categorical-many
+    family: board
+  data_shape:
+    columns:
+      - {"name": "task", "type": "string"}
+      - {"name": "assignee", "type": "string", "required": false}
+      - {"name": "status", "type": "string"}
+      - {"name": "priority", "type": "string", "required": false}
+      - {"name": "points", "type": "number", "required": false}
+  board_schema: |-
+    {
+      "group_by": "status",
+      "title_field": "task",
+      "subtitle_field": "assignee",
+      "tag_fields": [
+        "priority"
+      ],
+      "badge_field": "points",
+      "badge_label": "pts",
+      "order": [
+        "To do",
+        "In progress",
+        "Blocked",
+        "Done"
+      ],
+      "tones": {
+        "Blocked": "fail",
+        "Done": "pass"
+      }
+    }
+  example_rows:
+    - {"task": "Configure SSO", "assignee": "Asha Rao", "status": "To do", "priority": "High", "points": 5}
+    - {"task": "Load historical data", "assignee": "Chen Wei", "status": "In progress", "priority": "High", "points": 8}
+    - {"task": "Write test scripts", "assignee": "Dana Kim", "status": "In progress", "priority": "Medium", "points": 3}
+    - {"task": "Train administrators", "assignee": "Eli Moss", "status": "Blocked", "priority": "Medium", "points": 2}
+    - {"task": "Set up sandbox", "assignee": "Ben Ortiz", "status": "Done", "priority": "Low", "points": 1}
+  example_questions:
+    - "Show the task board"
+    - "What is blocked and who has it?"
+    - "Show the sprint as a kanban board"

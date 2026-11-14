@@ -27,7 +27,7 @@ from nexcraftviz.spec.model import Spec
 #: does not take full Vega, and a spec it cannot draw is worse than a refusal
 #: because nothing reports it.
 RENDERER = "vega-lite"
-SUPPORTED_FAMILIES = ("vega-lite", "kpi", "table")
+SUPPORTED_FAMILIES = ("vega-lite", "kpi", "table", "board")
 
 
 class ChartSurfaceError(ValueError):
@@ -117,6 +117,8 @@ def chart_type_of(spec: Spec) -> str:
         return str(declared or "kpi")
     if family == "table":
         return "table_with_cells"
+    if family == "board":
+        return "board"
     return spec.mark_summary or "chart"
 
 

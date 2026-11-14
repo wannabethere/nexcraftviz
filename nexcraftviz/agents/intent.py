@@ -37,6 +37,8 @@ _CHART_TYPES: dict[str, tuple[str, ...]] = {
     "multi_line": (r"multi[- ]line", r"lines? per\b"),
     "kpi": (r"\bkpi\b", r"single (?:number|value|metric)", r"big number"),
     "table_with_cells": (r"\bas a table\b", r"\bin a table\b", r"tabular"),
+    "board": (r"\bas a board\b", r"\bon a board\b", r"\bboard view\b", r"\bkanban\b",
+              r"\bas cards\b", r"\bpipeline board\b"),
     "funnel": (r"funnel chart", r"as a funnel"),
     "waterfall": (r"waterfall chart", r"as a waterfall"),
     "gauge": (r"\bgauge\b",),
