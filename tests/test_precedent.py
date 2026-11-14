@@ -337,3 +337,66 @@ def test_every_new_type_has_enough_examples_to_be_retrieved():
         counts[pair.chart_type] = counts.get(pair.chart_type, 0) + 1
     for chart_type in ("gantt", "burndown", "milestone_timeline", "cumulative_flow"):
         assert counts.get(chart_type, 0) >= 2, chart_type
+
+
+
+# ---------------------------------------------------------------------------
+# project delivery and resourcing — the standard outputs a PMO asks for
+# ---------------------------------------------------------------------------
+# Rows shaped the way a delivery tool returns them, and the questions people
+# ask of them. Selection comes from the corpus pairs, so each case here is a
+# check that a pair's routing metadata says what it should, not a rule.
+
+PORTFOLIO = [
+    {"project": "Northwind ERP", "status": "Active", "start_date": "2026-03-02", "go_live_planned_date": "2026-09-14", "rag": "Green"},
+    {"project": "Halcyon CRM", "status": "Active", "start_date": "2026-05-11", "go_live_planned_date": "2026-12-07", "rag": "Amber"},
+    {"project": "Atlas Data", "status": "Pre-Sales", "start_date": "2026-11-02", "go_live_planned_date": "2027-04-19", "rag": "Green"},
+    {"project": "Beacon Portal", "status": "Completed", "start_date": "2025-10-06", "go_live_planned_date": "2026-04-13", "rag": "Green"},
+    {"project": "Cedar Mobile", "status": "Active", "start_date": "2026-06-01", "go_live_planned_date": "2026-11-30", "rag": "Red"},
+]
+PHASES = [
+    {"phase": "Design", "planned_start": "2026-03-02", "planned_end": "2026-04-10", "actual_start": "2026-03-02", "actual_end": "2026-04-24"},
+    {"phase": "Config", "planned_start": "2026-04-13", "planned_end": "2026-06-19", "actual_start": "2026-04-27", "actual_end": "2026-07-10"},
+    {"phase": "UAT", "planned_start": "2026-06-22", "planned_end": "2026-08-14", "actual_start": "2026-07-13", "actual_end": None},
+    {"phase": "Go-live", "planned_start": "2026-08-17", "planned_end": "2026-09-14", "actual_start": None, "actual_end": None},
+]
+PIPELINE = [{"status": s, "projects": n} for s, n in [("Pre-Sales", 6), ("Kickoff", 3), ("Active", 11), ("On Hold", 2), ("Completed", 9)]]
+PIPELINE_REGION = [{"status": s, "region": r, "projects": n} for s, r, n in [
+    ("Pre-Sales", "AMER", 3), ("Pre-Sales", "EMEA", 2), ("Pre-Sales", "APAC", 1), ("Active", "AMER", 5), ("Active", "EMEA", 4),
+    ("Active", "APAC", 2), ("On Hold", "EMEA", 2), ("Completed", "AMER", 4), ("Completed", "EMEA", 3), ("Completed", "APAC", 2)]]
+PROJECT_LIST = [{"project": f"P{i}", "status": s, "region": r, "budget_hours": 100 * i} for i, (s, r) in enumerate(
+    [("Active", "AMER"), ("Active", "EMEA"), ("Pre-Sales", "AMER"), ("Completed", "APAC"), ("Active", "APAC"), ("On Hold", "EMEA"), ("Pre-Sales", "EMEA")], 1)]
+ALLOC = [{"person": p, "project": j, "allocation_pct": a} for p, j, a in [
+    ("Asha", "Northwind", 60), ("Asha", "Halcyon", 40), ("Ben", "Northwind", 100), ("Chen", "Halcyon", 50), ("Chen", "Atlas", 50),
+    ("Dana", "Atlas", 80), ("Eli", "Halcyon", 30), ("Eli", "Northwind", 90)]]
+
+
+DELIVERY_CASES = [
+    ("PORTFOLIO", PORTFOLIO, "how are our projects progressing?", "gantt"),
+    ("PORTFOLIO", PORTFOLIO, "show the project timelines", "gantt"),
+    ("PORTFOLIO", PORTFOLIO, "when do the active projects go live?", "gantt"),
+    ("PHASES", PHASES, "is Northwind on schedule?", "gantt"),
+    ("PHASES", PHASES, "planned vs actual dates for each phase", "gantt"),
+    ("PIPELINE", PIPELINE, "show the project pipeline by status", "bar"),
+    ("PIPELINE", PIPELINE, "how many projects are in each stage?", "bar"),
+    ("PIPELINE_REGION", PIPELINE_REGION, "project pipeline status by region", "stacked_bar"),
+    ("PROJECT_LIST", PROJECT_LIST, "show projects by status", "bar"),
+    ("ALLOC", ALLOC, "who is allocated to which project?", "heatmap"),
+    ("ALLOC", ALLOC, "is anyone over-allocated?", "stacked_bar"),
+]
+
+
+@pytest.mark.parametrize(("label", "rows", "question", "expected"), DELIVERY_CASES,
+                         ids=[f"{c[0]}:{c[2]}" for c in DELIVERY_CASES])
+def test_delivery_questions_find_their_chart(label, rows, question, expected):
+    found = precedents(profile_rows(rows), question=question)
+    assert found.best is not None, f"nothing suggested for {question!r}"
+    assert found.best.chart_type == expected, [p.chart_type for p in found][:4]
+
+
+def test_a_status_pipeline_is_not_a_funnel():
+    """Projects sit in a status; they do not convert out of one. A funnel's
+    drop-off reading would be a false story about the delivery pipeline."""
+    found = precedents(profile_rows(PIPELINE), question="show the project pipeline by status")
+    ranked = [p.chart_type for p in found]
+    assert ranked.index("bar") < ranked.index("funnel")

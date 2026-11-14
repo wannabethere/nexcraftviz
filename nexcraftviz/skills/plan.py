@@ -99,6 +99,7 @@ class PlanSkill(Skill[PlanIn, ChartPlan]):
         known = set(profile_rows(inputs.rows).column_names)
         if known:
             result.changes.extend(_split_field_lists(plan, known))
+            result.changes.extend(_count_needs_no_column(plan, known))
             invented = sorted(plan.fields_used() - known)
             if invented:
                 result.failed.append(
@@ -112,6 +113,32 @@ class PlanSkill(Skill[PlanIn, ChartPlan]):
 # ---------------------------------------------------------------------------
 # viz.critique
 # ---------------------------------------------------------------------------
+
+#: What a model writes for "count the rows" when it names the count as a field.
+_COUNT_NAMES = frozenset({"count", "*", "n", "record_count", "row_count", "records", "number_of_records"})
+
+
+def _count_needs_no_column(plan: ChartPlan, known: set[str]) -> list[str]:
+    """A count of rows reads no column, whatever the model called it.
+
+    Live, "show projects by status" over one row per project planned
+    `x = count(field="count")`, and the whole plan failed as naming a column
+    the data does not have -- for the most ordinary chart there is. Counting
+    rows is Vega-Lite's `aggregate: count`, which takes no field, so a
+    count-named field that is not a real column becomes exactly that. A real
+    column called `count` is left alone and summed or plotted as asked.
+    """
+    notes: list[str] = []
+    for enc in plan.encodings:
+        name = (enc.field or "").strip()
+        if not name or name in known or name.lower() not in _COUNT_NAMES:
+            continue
+        if enc.aggregate not in ("", "count"):
+            continue
+        enc.field, enc.aggregate = "", "count"
+        notes.append(f"{enc.channel}: {name!r} is a row count, not a column")
+    return notes
+
 
 def _split_field_lists(plan: ChartPlan, known: set[str]) -> list[str]:
     """One encoding per column, when a field arrived as a comma list of them.
